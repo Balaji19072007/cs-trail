@@ -20,7 +20,9 @@ import Settings from './pages/Settings.jsx';
 // CRITICAL: Import both Code Playground and dedicated Solve page
 import Code from './pages/Code.jsx'; 
 import SolveProblem from './pages/SolveProblem.jsx'; // NEW IMPORT
-
+// NEW: Import MyCourses and MyProgress pages
+import MyCourses from './pages/MyCourses.jsx';
+import MyProgress from './pages/MyProgress.jsx';
 
 import './App.css';
 
@@ -68,6 +70,26 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <Code />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* NEW: My Courses Route - User's enrolled courses */}
+                <Route
+                  path="/my-courses"
+                  element={
+                    <ProtectedRoute>
+                      <MyCourses />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* NEW: My Progress Route - User's coding progress */}
+                <Route
+                  path="/my-progress"
+                  element={
+                    <ProtectedRoute>
+                      <MyProgress />
                     </ProtectedRoute>
                   }
                 />

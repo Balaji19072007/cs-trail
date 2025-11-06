@@ -30,27 +30,27 @@ export class ProblemManager {
     return this.getProblemKey(problemId, 'time_total_elapsed'); 
   }
   
-  // Removed: static getSolutionViewTimeKey(problemId) 
-  
   // Problem data management
   static initializeProblemData(problemId) {
-    const problemData = {
-      id: problemId,
-      startTime: 0, // Session start time reset to 0
-      solved: false,
-      submissions: [],
-      userCode: '',
-      timeElapsed: 0, // Cumulative time
-    };
+    // Only initialize if data is missing, to prevent overwriting existing data
+    if (localStorage.getItem(this.getSolvedKey(problemId)) === null) {
+        localStorage.setItem(this.getSolvedKey(problemId), 'false');
+        localStorage.setItem(this.getSubmissionHistoryKey(problemId), JSON.stringify([]));
+        localStorage.setItem(this.getCodeKey(problemId), '');
+        localStorage.setItem(this.getTimeSpentKey(problemId), '0'); // Initialize elapsed time
+        localStorage.setItem(this.getStartTimeKey(problemId), '0'); // Ensure start time is 0
+        
+        return {
+          startTime: 0,
+          solved: false,
+          submissions: [],
+          userCode: '',
+          timeElapsed: 0,
+          initialized: true
+        };
+    }
     
-    localStorage.setItem(this.getStartTimeKey(problemId), '0');
-    localStorage.setItem(this.getSolvedKey(problemId), 'false');
-    localStorage.setItem(this.getSubmissionHistoryKey(problemId), JSON.stringify([]));
-    localStorage.setItem(this.getCodeKey(problemId), '');
-    localStorage.setItem(this.getTimeSpentKey(problemId), '0'); // Initialize elapsed time
-    // Removed: localStorage.setItem(this.getSolutionViewTimeKey(problemId), '0');
-    
-    return problemData;
+    return this.getProblemProgress(problemId);
   }
   
   static getProblemProgress(problemId) {
@@ -58,8 +58,8 @@ export class ProblemManager {
     const solved = localStorage.getItem(this.getSolvedKey(problemId)) === 'true';
     const submissions = JSON.parse(localStorage.getItem(this.getSubmissionHistoryKey(problemId)) || '[]');
     const userCode = localStorage.getItem(this.getCodeKey(problemId)) || '';
+    // Use getTimeSpentKey for elapsed time
     const timeElapsed = parseInt(localStorage.getItem(this.getTimeSpentKey(problemId)) || 0); 
-    // Removed: const solutionViewTime = parseInt(localStorage.getItem(this.getSolutionViewTimeKey(problemId)) || 0);
     
     // Calculate current session time and total time for remaining time calculation
     const currentSessionTime = startTime > 0 ? (Date.now() - startTime) : 0;
@@ -71,9 +71,10 @@ export class ProblemManager {
       submissions,
       userCode,
       timeElapsed, // Cumulative time elapsed
-      // Removed: solutionViewTime,
       // Remaining time is based on total time spent (elapsed + current session)
-      timeRemaining: Math.max(0, TIME_TO_REVEAL_MS - totalTime)
+      timeRemaining: Math.max(0, TIME_TO_REVEAL_MS - totalTime),
+      // NEW: A simple check if initialization has occurred
+      initialized: localStorage.getItem(this.getSolvedKey(problemId)) !== null
     };
   }
   
@@ -104,12 +105,15 @@ export class ProblemManager {
       localStorage.setItem(this.getStartTimeKey(problemId), '0');
   }
 
-  // Removed: isSolutionCooldownActive(problemId)
-  
+  // Helper function to pause the timer (calls stopTimer and exists in SolveProblem.jsx)
+  static pauseTimer(problemId) {
+    this.stopTimer(problemId);
+  }
+
   // Updated: Should reveal solution if solved OR timeElapsed has reached the limit
   static shouldRevealSolution(problemId) {
     const progress = this.getProblemProgress(problemId);
-    return progress.solved || (TIME_TO_REVEAL_MS - progress.timeRemaining) <= 0; // Check if remaining time is 0 or less
+    return progress.solved || progress.timeRemaining <= 0;
   }
   
   static markAsSolved(problemId) {
@@ -119,8 +123,8 @@ export class ProblemManager {
     localStorage.setItem(this.getSolvedKey(problemId), 'true');
     
     // Total time spent is already saved in time_total_elapsed
-    const timeSpent = parseInt(localStorage.getItem(this.getTimeSpentKey(problemId)));
-    // We update the original time_spent key for consistency with global stats (kept original for restoration)
+    const timeSpent = parseInt(localStorage.getItem(this.getTimeSpentKey(problemId)) || 0);
+    // We update the original time_spent key for consistency with global stats 
     localStorage.setItem(this.getProblemKey(problemId, 'time_spent'), timeSpent.toString());
     
     this.updateGlobalProgress();
@@ -130,9 +134,8 @@ export class ProblemManager {
       // Pause the timer session before marking as viewed
       this.stopTimer(problemId);
       
-      // We no longer track the solution view time, but we reset the timer to 0 
-      // so the user gets a fresh 10 minutes if they attempt it again.
-      this.resetTimer(problemId); 
+      // The logic in SolveProblem.jsx relies on timeRemaining <= 0 which is sufficient
+      // if the solution is viewed after the timer runs out. 
   }
   
   // User code management (unchanged)
@@ -253,22 +256,20 @@ export class ProblemManager {
   // Bulk operations (updated for new keys)
   static initializeAllProblems() {
     for (let i = 1; i <= this.TOTAL_PROBLEMS; i++) {
-      if (localStorage.getItem(this.getSolvedKey(i)) === null) {
-        this.initializeProblemData(i);
-      }
+      // Use initializeProblemData, which now checks if data is missing
+      this.initializeProblemData(i);
     }
   }
   
   static resetAllProgress() {
-    for (let i = 1; i <= this.TOTAL_PROBLEMS; i++) { // Corrected: TOTAL_PROBLELS to TOTAL_PROBLEMS
-      localStorage.removeItem(this.getProblemKey(i, 'start_time')); // old key
-      localStorage.removeItem(this.getStartTimeKey(i)); // session_start_time
+    for (let i = 1; i <= this.TOTAL_PROBLEMS; i++) {
+      localStorage.removeItem(this.getProblemKey(i, 'start_time')); 
+      localStorage.removeItem(this.getStartTimeKey(i));
       localStorage.removeItem(this.getSolvedKey(i));
       localStorage.removeItem(this.getSubmissionHistoryKey(i));
       localStorage.removeItem(this.getCodeKey(i));
-      localStorage.removeItem(this.getTimeSpentKey(i)); // time_total_elapsed
-      localStorage.removeItem(this.getProblemKey(i, 'time_spent')); // old key
-      // Removed: localStorage.removeItem(this.getSolutionViewTimeKey(i));
+      localStorage.removeItem(this.getTimeSpentKey(i));
+      localStorage.removeItem(this.getProblemKey(i, 'time_spent'));
     }
     localStorage.removeItem('global_progress');
   }
@@ -307,7 +308,6 @@ export class ProblemManager {
             localStorage.setItem(this.getSolvedKey(id), progress.solved.toString());
             localStorage.setItem(this.getTimeSpentKey(id), (progress.timeElapsed || 0).toString()); 
             localStorage.setItem(this.getProblemKey(id, 'time_spent'), (progress.timeSpent || 0).toString()); 
-            // Removed: localStorage.setItem(this.getSolutionViewTimeKey(id), (progress.solutionViewTime || 0).toString());
             
             localStorage.setItem(this.getSubmissionHistoryKey(id), JSON.stringify(progress.submissions || []));
             localStorage.setItem(this.getCodeKey(id), progress.userCode || '');
@@ -374,20 +374,11 @@ export class ProblemManager {
   }
 }
 
-// **ENFORCED PROGRESS RESET**: Clears all data to ensure all problems start at "To Do."
-// Corrected: TOTAL_PROBLELS to TOTAL_PROBLEMS - this is an external file, so its internal logic is fixed.
+// Remove old conflicting keys on script execution if they exist
 for (let i = 1; i <= ProblemManager.TOTAL_PROBLEMS; i++) {
-    localStorage.removeItem(ProblemManager.getProblemKey(i, 'start_time')); // old key
-    localStorage.removeItem(ProblemManager.getStartTimeKey(i)); // session_start_time
-    localStorage.removeItem(ProblemManager.getSolvedKey(i));
-    localStorage.removeItem(ProblemManager.getSubmissionHistoryKey(i));
-    localStorage.removeItem(ProblemManager.getCodeKey(i));
-    localStorage.removeItem(ProblemManager.getTimeSpentKey(i)); // time_total_elapsed
-    localStorage.removeItem(ProblemManager.getProblemKey(i, 'time_spent')); // old key
-    localStorage.removeItem(ProblemManager.getProblemKey(i, 'solution_view_time')); // Removed key
+    localStorage.removeItem(ProblemManager.getProblemKey(i, 'start_time')); 
+    localStorage.removeItem(ProblemManager.getProblemKey(i, 'solution_view_time')); 
 }
-localStorage.removeItem('global_progress');
 
-
-// Initialize all problems on first load
+// Initialize all problems on first load (uses safe check inside the method)
 ProblemManager.initializeAllProblems();

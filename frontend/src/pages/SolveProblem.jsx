@@ -4,9 +4,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as feather from 'feather-icons';
-import { fetchProblemById, submitSolution, runTestCases } from '../api/problemApi.js';
+// FIX: Update imported functions to include fetchProblemTestCases
+import { fetchProblemById, submitSolution, runTestCases, sendInputToProgram, fetchProblemTestCases } from '../api/problemApi.js'; 
 import Loader from '../components/common/Loader.jsx';
-import CodeEditorForSolvePage from '../components/problems/CodeEditorForSolvePage.jsx'; // adjust if file lives elsewhere
+import CodeEditorForSolvePage from '../components/problems/CodeEditorForSolvePage.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { ProblemManager } from '../utils/problemManager.js';
 
@@ -79,7 +80,7 @@ function processBackspaces(prev, incoming) {
 // ---------- Component ----------
 const SolveProblem = () => {
   const { isLoggedIn } = useAuth();
-  const navigate = useNavigate();
+  const navigate = useNavigate(); 
   const { isDark } = useTheme();
   const [searchParams] = useSearchParams();
 
@@ -99,18 +100,22 @@ const SolveProblem = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [outputError, setOutputError] = useState(false);
 
+  // UPDATED: testCases state structure
   const [testCases, setTestCases] = useState([]);
   const [isRunningTestCases, setIsRunningTestCases] = useState(false);
   const [allTestsPassed, setAllTestsPassed] = useState(false);
+  const [testResultSummary, setTestResultSummary] = useState(null); // NEW: Store summary data
 
   const [hints, setHints] = useState([]);
   const [submissionHistory, setSubmissionHistory] = useState([]);
-  const [submissionResult, setSubmissionResult] = useState(null);
+  const [submissionResult, setSubmissionResult = (v) => {}] = useState(null); // Type check to prevent destructuring issues
 
   const [notification, showFloatingNotification] = useFloatingNotification();
+  const [isWaitingForInput, setIsWaitingForInput] = useState(false); // NEW: Track input state
+  const inputBufferRef = useRef(''); // NEW: Input buffer
 
   // timer display
-  const [timeState, setTimeState] = useState(formatMs(TIME_TO_REVEAL_MS));
+  const [timeState, setTimeState] = useState(formatMs(TIME_TO_REVEAL_MINUTES * 60 * 1000));
 
   // refs
   const editorRef = useRef(null);
@@ -159,21 +164,21 @@ const SolveProblem = () => {
         clearInterval(timerIntervalRef.current);
         return;
       }
-      const remaining = typeof p.timeRemaining === 'number' ? p.timeRemaining : TIME_TO_REVEAL_MS;
+      const remaining = typeof p.timeRemaining === 'number' ? p.timeRemaining : TIME_TO_REVEAL_MINUTES * 60 * 1000;
       setTimeState(formatMs(remaining));
       
       // Check if solution should be revealed when time runs out
       if (remaining <= 0) {
         setTimeState('00:00');
         ProblemManager.stopTimer?.(problemId);
-        ProblemManager.markReveal?.(problemId);
-        showFloatingNotification("Time's up! Solution unlocked.", 'info');
+        // FIX: The ProblemManager does not have a markReveal method, but the progress logic relies on timeRemaining <= 0
+        // We ensure the logic is consistent with isSolutionAvailable check.
         clearInterval(timerIntervalRef.current);
       }
     }, 1000);
   }, [problemId, showFloatingNotification]);
 
-  // ---------- Load problem and testcases ----------
+  // ---------- Load problem and testcases (FIXED LOGIC) ----------
   useEffect(() => {
     let canceled = false;
     if (!Number.isFinite(problemId)) {
@@ -185,6 +190,9 @@ const SolveProblem = () => {
     setIsLoading(true);
     setError(null);
     setAllTestsPassed(false);
+    setTestResultSummary(null);
+
+    const normalize = (str) => str ? str.trim().replace(/[\r\n]/g, ' ').replace(/\s+/g, ' ') : '';
 
     const load = async () => {
       try {
@@ -192,62 +200,53 @@ const SolveProblem = () => {
           ProblemManager.initializeProblemData(problemId);
         }
 
-        const fetched = await fetchProblemById(problemId);
+        // Fetch problem details and ALL test cases concurrently
+        const [fetched, rawTestCases] = await Promise.all([
+          fetchProblemById(problemId),
+          fetchProblemTestCases(problemId) // NEW API CALL
+        ]);
+        
+        // Use fetched examples to determine which raw test cases are visible
+        const visibleExampleInputs = fetched.examples ? fetched.examples.map(e => normalize(e.input)) : [];
+        
+        // CRITICAL FIX: Initialize testCases state with ALL raw test cases.
+        const initialTestCases = rawTestCases.map((rawTest, index) => {
+            // Determine if the raw test case's input is found in the visible examples
+            const isVisible = visibleExampleInputs.some(input => normalize(input) === normalize(rawTest.input));
+            
+            // Find the full example object to pull explanation/description if available
+            const matchingExample = fetched.examples?.find(e => normalize(e.input) === normalize(rawTest.input));
 
-        // Load ALL test cases from problemData.json
-        let allTestCases = [];
-        try {
-          const problemDataResponse = await fetch('/problemData.json');
-          if (problemDataResponse.ok) {
-            const problemData = await problemDataResponse.json();
-            const problemDataEntry = problemData.find(p => p.id === problemId);
-            if (problemDataEntry && problemDataEntry.testCases) {
-              allTestCases = problemDataEntry.testCases;
+            return { 
+                id: `test-${index + 1}`, 
+                input: rawTest.input ?? '', 
+                expected: rawTest.expected ?? '',
+                explanation: matchingExample?.explanation ?? '',
+                userOutput: '',
+                passed: false,
+                status: 'Pending',
+                isVisible: isVisible 
             }
-          }
-        } catch (e) {
-          console.info('Could not load problemData.json:', e?.message || e);
-        }
+        });
 
-        // If no test cases from problemData, use fetched ones
-        if (allTestCases.length === 0 && fetched?.testCases) {
-          allTestCases = fetched.testCases;
-        }
-
-        // If still no test cases, use examples
-        if (allTestCases.length === 0 && fetched?.examples) {
-          allTestCases = fetched.examples.map((e, index) => ({ 
-            input: e.input ?? '', 
-            expected: e.output ?? '',
-            id: `example-${index + 1}`
-          }));
-        }
-
-        const merged = { ...(fetched || {}), testCases: allTestCases };
         if (canceled) return;
-        setProblem(merged);
+        setProblem(fetched);
 
         const saved = ProblemManager.getUserCode(problemId);
-        const initialCode = saved || merged.templateCode || getDefaultTemplate(merged.language || 'C');
+        const initialCode = saved || fetched.templateCode || getDefaultTemplate(fetched.language || 'C');
         setCode(initialCode);
 
         const prog = ProblemManager.getProblemProgress(problemId) || {};
         if (prog.solved) ProblemManager.markAsSolved?.(problemId);
 
-        // Initialize ALL test cases with proper IDs
-        setTestCases(allTestCases.map((tc, idx) => ({
-          id: tc.id ?? idx + 1,
-          input: tc.input ?? '',
-          expected: tc.expected ?? tc.output ?? '',
-          userOutput: '',
-          passed: false,
-          status: 'Pending'
-        })));
+        // Set the full list of test cases (visible + hidden placeholders)
+        setTestCases(initialTestCases); 
 
-        if (Array.isArray(merged.hints) && merged.hints.length > 0) {
-          setHints(merged.hints.slice(0, 3));
-        } else if (merged.solution?.explanation) {
-          const raw = String(merged.solution.explanation).replace(/\n+/g, ' ');
+        // Hint logic remains the same
+        if (Array.isArray(fetched.hints) && fetched.hints.length > 0) {
+          setHints(fetched.hints.slice(0, 3));
+        } else if (fetched.solution?.explanation) {
+          const raw = String(fetched.solution.explanation).replace(/\n+/g, ' ');
           const sentences = raw.split(/[.?!]\s+/).map(s => s.trim()).filter(Boolean);
           if (sentences.length >= 2) setHints(sentences.slice(0, 3));
           else if (sentences.length === 1) {
@@ -275,10 +274,10 @@ const SolveProblem = () => {
     return () => {
       canceled = true;
       const progress = ProblemManager.getProblemProgress(problemId) || {};
-      if (!progress.solved && progress.revealed && !progress.solved) {
-        ProblemManager.setGraceStart?.(problemId, Date.now());
+      if (!progress.solved && progress.timeRemaining > 0 && !progress.solved) {
+        ProblemManager.setGraceStart?.(problemId, Date.now()); // Assuming this helper exists
       }
-      ProblemManager.pauseTimer?.(problemId);
+      ProblemManager.pauseTimer?.(problemId); // Assuming this helper exists
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
@@ -288,6 +287,7 @@ const SolveProblem = () => {
 
   // register console ref with editor
   useEffect(() => {
+    // FIX: Pass the console DOM node reference to the editor component
     if (consoleRef.current && editorRef.current?.setTerminalRef) editorRef.current.setTerminalRef(consoleRef.current);
   }, [consoleRef.current, editorRef.current, problem]);
 
@@ -304,6 +304,7 @@ const SolveProblem = () => {
 
   // Add caret blink CSS to page (once)
   useEffect(() => {
+    // ... (Caret CSS injection remains the same) ...
     if (document.getElementById('solve-console-blink-style')) return;
     const style = document.createElement('style');
     style.id = 'solve-console-blink-style';
@@ -327,34 +328,58 @@ const SolveProblem = () => {
   }, []);
 
   // ---------- Output handling (prevent duplicate output) ----------
-  const handleOutputReceived = useCallback((newOutput, isError, isRunningState) => {
+  const handleOutputReceived = useCallback((newOutput, isError, isRunningState, isWaitingInput = false) => {
+    
+    // 1. Update running/input status
+    setIsRunning(Boolean(isRunningState));
+    setIsWaitingForInput(isWaitingInput);
+
+    // If terminal is waiting for input, the parent component needs to handle key presses.
+    if (isWaitingInput) {
+        setOutput(prev => prev.replace(/█?$/, '█')); // Ensure cursor is present at the very end
+        // Focus console when waiting for input
+        setTimeout(() => consoleRef.current?.focus?.(), 0);
+        return; 
+    }
+    
     setOutput(prev => {
       if (typeof newOutput !== 'string') return prev;
-      // If it's the initial executing message, replace instead of append
-      if (newOutput.includes('Executing...')) {
-        return newOutput;
+
+      // Clean cursor if present before adding new output
+      prev = prev.replace(/█$/, '');
+
+      // Special case: If execution stops, replace the output with the final error/success
+      if (!isRunningState && newOutput.includes('Execution')) {
+          return newOutput;
       }
-      // If newOutput exactly equals prev or prev already endsWith newOutput, don't append again (avoid duplicates)
-      if (newOutput === prev || prev.endsWith(newOutput)) {
-        return prev;
-      }
-      // Otherwise process backspaces across prev + new chunk
-      return processBackspaces(prev, newOutput);
+
+      // Process backspaces robustness across prev + new chunk
+      const processed = processBackspaces(prev, newOutput);
+      return processed;
     });
 
     setOutputError(Boolean(isError));
-    setIsRunning(Boolean(isRunningState));
     setOutputTab('console');
 
-    // Focus console when waiting for input
-    if (isRunningState && editorRef.current?.getIsWaitingForInput && editorRef.current.getIsWaitingForInput()) {
-      consoleRef.current?.focus?.();
-    }
   }, []);
+
+  // ---------- Console Input Handling ----------
+  const handleConsoleKeyPress = (e) => {
+    if (!isWaitingForInput) return;
+    
+    // The key press logic is now handled in the CodeEditorForSolvePage component.
+    // The handler here is primarily to ensure focus and prevent default browser behavior
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // The editor child component handles sending the input via socket.
+    }
+  };
+
 
   // ---------- Run/Stop execution ----------
   const handleRunCode = () => {
     setAllTestsPassed(false);
+    setTestResultSummary(null);
     const currentCode = editorRef.current?.getCode() || code;
     if (!currentCode.trim()) {
       handleOutputReceived('Execution Failed: Please write some code first.\n', true, false);
@@ -362,10 +387,10 @@ const SolveProblem = () => {
     }
     // Clear output first to avoid duplicated old + executing messages
     setOutput('');
-    handleOutputReceived('Executing... Please wait or provide input directly in the console below.\n', false, true);
+    handleOutputReceived('Executing...\n', false, true);
 
     if (editorRef.current?.runCode) {
-      editorRef.current.runCode(currentCode);
+      editorRef.current.runCode(currentCode); // No input passed here for console execution
     } else {
       handleOutputReceived('Execution Error: Editor is not ready.\n', true, false);
     }
@@ -382,11 +407,16 @@ const SolveProblem = () => {
     }
   };
 
-  // ---------- Run testcases ----------
+  // ---------- Run testcases (FIXED LOGIC) ----------
   const runAllTestCases = async () => {
     const currentCode = editorRef.current?.getCode() || code;
     if (!currentCode.trim()) {
       showFloatingNotification('Please write some code first.', 'error');
+      return;
+    }
+    if (!isLoggedIn) {
+      showFloatingNotification('You must be signed in to run test cases.', 'error');
+      navigate('/signin');
       return;
     }
     if (!testCases || testCases.length === 0) {
@@ -397,30 +427,49 @@ const SolveProblem = () => {
     setIsRunningTestCases(true);
     setOutputTab('tests');
     setAllTestsPassed(false);
+    setTestResultSummary(null);
 
     try {
+      // Call protected API endpoint
       const result = await runTestCases(problemId, currentCode, language);
-      const results = result?.testResults || [];
-      const updated = testCases.map((tc, idx) => {
-        const r = results[idx] || {};
-        const passed = Boolean(r.passed);
-        const userOut = (r.output ?? r.stdout ?? '') + (r.error ? `\nError: ${r.error}` : '');
-        const status = passed ? 'Accepted' : (r.error ? 'Error' : (r.output || r.stdout ? 'Wrong Answer' : 'Pending'));
-        return { ...tc, userOutput: userOut, passed, status };
+      const results = result?.results || []; // Use 'results' field from backend
+      
+      // Update state structure with comprehensive backend data
+      const updated = results.map((r, index) => {
+        const statusText = r.status === 'pass' ? 'Accepted' : (r.status === 'error' ? 'Error' : 'Wrong Answer');
+        
+        // Find the corresponding original test case data for input and visibility reference
+        const originalTc = testCases.find(tc => tc.id === `test-${r.testCase}`) || {};
+
+        return { 
+          id: `test-${r.testCase}`, 
+          input: r.input || 'N/A', // Full input
+          expected: r.expectedOutput, // Backend hides expected output if not visible
+          userOutput: r.codeOutput,
+          passed: r.status === 'pass', 
+          status: statusText,
+          // Use backend's visibility flag, but fall back to original data if available
+          isVisible: r.isVisible !== undefined ? r.isVisible : originalTc.isVisible || false, 
+          error: r.error || null,
+        };
       });
+
       setTestCases(updated);
-      const allPassed = updated.length > 0 && updated.every(t => t.passed);
+      setTestResultSummary(result);
+      const allPassed = result.passedCount === result.totalTests;
       setAllTestsPassed(allPassed);
+      
       showFloatingNotification(allPassed ? 'All tests passed!' : 'Some tests failed.', allPassed ? 'success' : 'error');
+      
     } catch (err) {
       console.error('runTestCases failed', err);
-      showFloatingNotification('Failed to run test cases: ' + (err.message || 'API error'), 'error');
+      showFloatingNotification('Failed to run test cases: ' + (err.response?.data?.msg || err.message || 'API error'), 'error');
     } finally {
       setIsRunningTestCases(false);
     }
   };
 
-  // ---------- Submit ----------
+  // ---------- Submit (FIXED LOGIC) ----------
   const handleSubmitCode = useCallback(async () => {
     const currentCode = editorRef.current?.getCode() || code;
     if (!currentCode.trim()) {
@@ -432,71 +481,69 @@ const SolveProblem = () => {
       navigate('/signin');
       return;
     }
+    
+    // Allow submission if already solved OR if all tests passed (frontend state check)
+    // The backend performs the final check, but this prevents unnecessary calls.
     if (!ProblemManager.getProblemProgress(problemId)?.solved && !allTestsPassed) {
-      showFloatingNotification('You must pass all test cases before submitting.', 'warning');
+      showFloatingNotification('You must pass all tests before submitting (Run All first).', 'warning');
       return;
     }
 
     setIsRunning(true);
-    setOutput('Judging submission against all test cases...');
+    setOutput('Judging submission against all hidden and visible test cases...');
     setOutputError(false);
-    setOutputTab('tests');
+    setOutputTab('console');
 
     try {
+      // Call updated submitSolution API
       const result = await submitSolution(problemId, currentCode, language);
-      const newTestCases = (testCases || []).map((tc, idx) => {
-        const r = result.testResults?.[idx] || {};
-        return {
-          ...tc,
-          status: r.passed ? 'Accepted' : (r.error ? 'Error' : 'Wrong Answer'),
-          userOutput: (r.output ?? r.stdout ?? '') + (r.error ? `\nError: ${r.error}` : ''),
-          passed: Boolean(r.passed)
-        };
-      });
-      setTestCases(newTestCases);
 
-      const summary = {
-        isCorrect: Boolean(result.allPassed),
-        passedTestCases: result.passedCount ?? newTestCases.filter(t => t.passed).length,
-        failedTestCases: result.failedCount ?? newTestCases.filter(t => !t.passed).length,
-        totalTestCases: newTestCases.length,
-        executionTime: result.executionTime ?? 'N/A',
-        memory: result.memoryUsed ?? 'N/A',
-        testCases: newTestCases
+      const isSolved = Boolean(result.isSolved);
+      
+      // Update local progress/history
+      const record = {
+        status: isSolved ? 'Accepted' : 'Wrong Answer',
+        date: new Date().toLocaleString(),
+        passed: result.passedCount, // Use direct count from backend
+        total: result.totalTests, // Use total from backend
       };
+      ProblemManager.addSubmission(problemId, record);
+      setSubmissionHistory(ProblemManager.getSubmissionHistory(problemId) || []);
 
-      setSubmissionResult(summary);
-      setOutput(`Submission Result: ${summary.isCorrect ? 'Accepted' : 'Wrong Answer'}! Passed ${summary.passedTestCases}/${summary.totalTestCases} tests.`);
-      setOutputError(!summary.isCorrect);
-
-      if (summary.isCorrect) {
-        showFloatingNotification('Submission Accepted! Great job.', 'success');
+      if (isSolved) {
+        showFloatingNotification('Solution Accepted! Problem Solved!', 'success');
         ProblemManager.markAsSolved(problemId);
+        
         if (timerIntervalRef.current) {
           clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
         }
-      } else {
-        showFloatingNotification('Submission failed on private tests.', 'error');
-      }
 
-      const record = {
-        status: summary.isCorrect ? 'Accepted' : 'Wrong Answer',
-        date: new Date().toLocaleString(),
-        passed: summary.passedTestCases,
-        total: summary.totalTestCases
-      };
-      ProblemManager.addSubmission(problemId, record);
-      setSubmissionHistory(ProblemManager.getSubmissionHistory(problemId) || []);
+        // FIX: Navigate back to problems list and scroll to the solved card
+        const scrollToId = `problem-${problemId}`;
+        setTimeout(() => {
+          navigate('/problems', { state: { scrollToId: scrollToId } });
+        }, 1000);
+      } else {
+        showFloatingNotification('Submission failed. Not all hidden tests passed.', 'error');
+        // If submission fails, re-run all tests to update the UI with accurate visible results
+        runAllTestCases();
+      }
+      
+      // Update console output
+      setOutput(`Submission Result: ${result.message}\nAccuracy: ${result.accuracy}% (${result.passedCount}/${result.totalTests} tests passed)`);
+      setOutputError(!isSolved);
+
     } catch (err) {
       console.error('submitSolution failed', err);
-      setOutput(`Submission Error: ${err.message || 'API failure.'}`);
+      const errMsg = err.response?.data?.msg || err.message || 'API failure.';
+      setOutput(`Submission Error: ${errMsg}`);
       setOutputError(true);
-      showFloatingNotification('Failed to submit solution: ' + (err.message || 'API error'), 'error');
+      showFloatingNotification('Failed to submit solution: ' + errMsg, 'error');
     } finally {
       setIsRunning(false);
     }
-  }, [code, isLoggedIn, navigate, problemId, testCases, allTestsPassed, language]);
+  }, [code, isLoggedIn, navigate, problemId, allTestsPassed, language, showFloatingNotification, runAllTestCases]);
 
   // Copy, reset, load solution
   const copyCodeToClipboard = () => {
@@ -510,19 +557,21 @@ const SolveProblem = () => {
     setOutput('Code reset to original template.');
     setOutputError(false);
     setAllTestsPassed(false);
+    // Reset test case statuses
     setTestCases(prev => prev.map(tc => ({ ...tc, status: 'Pending', userOutput: '', passed: false })));
+    setTestResultSummary(null);
+
     ProblemManager.saveUserCode?.(problemId, template);
-    // Timer is NOT reset when code is reset - only code editor is reset
     showFloatingNotification('Code has been reset to template.', 'info');
   };
 
   const loadSolution = () => {
     const prog = ProblemManager.getProblemProgress(problemId) || {};
-    const isSolutionAvailable = prog.solved || prog.revealed || prog.timeRemaining <= 0;
+    const isSolutionAvailable = prog.solved || prog.timeRemaining <= 0;
     
     if (isSolutionAvailable && problem?.solution?.code) {
       setCode(problem.solution?.code || code);
-      // Mark solution as viewed but don't lock it again
+      // Mark solution as viewed
       ProblemManager.markSolutionViewed?.(problemId);
       showFloatingNotification('Solution loaded to editor', 'success');
       setActiveTab('solution');
@@ -562,7 +611,7 @@ const SolveProblem = () => {
 
   const StatusBadge = () => {
     const prog = ProblemManager.getProblemProgress(problemId) || {};
-    const isSolutionAvailable = prog.solved || prog.revealed || prog.timeRemaining <= 0;
+    const isSolutionAvailable = prog.solved || prog.timeRemaining <= 0;
     
     if (prog.solved) {
       return (
@@ -584,7 +633,7 @@ const SolveProblem = () => {
       </div>
     );
   };
-
+  
   // Render
   if (isLoading) return <Loader message="Loading problem details..." size="lg" />;
   if (error || !problem) return <div className={`min-h-screen ${containerBg} p-12 text-center text-red-400`}>{error || 'Problem data is unavailable.'}</div>;
@@ -594,13 +643,13 @@ const SolveProblem = () => {
   
   // Check if solution is available
   const prog = ProblemManager.getProblemProgress(problemId) || {};
-  const isSolutionAvailable = prog.solved || prog.revealed || prog.timeRemaining <= 0;
+  const isSolutionAvailable = prog.solved || prog.timeRemaining <= 0;
 
   const sanitizedProblemStatement = problem.problemStatement || '<p>No statement provided.</p>';
   const sanitizedSolutionExplanation = problem.solution?.explanation || '<p>Solution explanation not available.</p>';
 
   // Whether editor is currently waiting for input
-  const editorWaitingForInput = editorRef.current?.getIsWaitingForInput && editorRef.current.getIsWaitingForInput();
+  const editorWaitingForInput = isWaitingForInput; // Rely on local state
 
   return (
     <div className={`min-h-screen ${containerBg} transition-colors duration-500 solve-page-container pt-[84px] lg:pt-0`}>
@@ -609,9 +658,12 @@ const SolveProblem = () => {
       {/* Mobile header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
         <div className="flex items-center justify-between p-4">
-          <button onClick={() => navigate('/problems')} className="flex items-center text-gray-600 dark:text-gray-300">
+          <button 
+             // FIX: For solved problem, scroll to problem card on the problems page
+             onClick={() => navigate('/problems', { state: { scrollToId: `problem-${displayId}` } })} 
+             className="flex items-center text-gray-600 dark:text-gray-300">
             <i data-feather="arrow-left" className="w-5 h-5 mr-2"></i>
-            <span className="font-medium">Back</span>
+            <span className="font-medium">Back to Problems</span>
           </button>
           <div className="flex items-center space-x-2">
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${isDark ? 'bg-blue-600/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>{language}</span>
@@ -629,7 +681,10 @@ const SolveProblem = () => {
 
       <div className="max-w-screen-2xl mx-auto px-0 lg:px-8 pt-0 lg:pt-8">
         <div className="hidden lg:flex justify-between items-center mb-6 text-left">
-          <button onClick={() => navigate('/problems', { state: { scrollToId: `problem-${displayId}` } })} className={`inline-flex items-center px-4 py-2 border ${borderClass} rounded-lg text-sm font-medium ${isDark ? 'text-gray-200 bg-gray-700' : 'text-gray-700 bg-white'} ${linkHover} transition-colors duration-300`}>
+          <button 
+             // FIX: For solved problem, scroll to problem card on the problems page
+             onClick={() => navigate('/problems', { state: { scrollToId: `problem-${displayId}` } })} 
+             className={`inline-flex items-center px-4 py-2 border ${borderClass} rounded-lg text-sm font-medium ${isDark ? 'text-gray-200 bg-gray-700' : 'text-gray-700 bg-white'} ${linkHover} transition-colors duration-300`}>
             <i data-feather="arrow-left" className="w-4 h-4 mr-2"></i> Back to Problems
           </button>
           {ProblemManager.getProblemProgress(problemId)?.solved && nextProblemId && (
@@ -692,21 +747,23 @@ const SolveProblem = () => {
                       </div>
                     </div>
 
-                    {testCases && testCases.length > 0 && (
-                      <div className={`example-container ${isDark ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3 lg:p-4 border-l-4 border-blue-500`}>
-                        <h4 className="example-title font-bold text-blue-500 mb-2 lg:mb-3 text-sm lg:text-base">Example Test Case (ID: {testCases[0].id})</h4>
+                    {/* FIX: Display ALL visible examples for the UI preview */}
+                    {testCases.length > 0 && testCases.filter(tc => tc.isVisible).map((tc, index) => (
+                      <div key={tc.id} className={`example-container ${isDark ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3 lg:p-4 border-l-4 border-blue-500`}>
+                        <h4 className="example-title font-bold text-blue-500 mb-2 lg:mb-3 text-sm lg:text-base">Example Test Case {index + 1}</h4>
+                        {tc.explanation && <p className="text-xs text-gray-500 italic mb-2">{tc.explanation}</p>}
                         <div className="example-io grid grid-cols-1 gap-3 lg:gap-4">
                           <div>
                             <div className={`font-medium ${textPrimary} mb-1`}>Input</div>
-                            <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-gray-800 text-gray-100'} p-2 lg:p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap text-left`}>{testCases[0].input || 'N/A'}</pre>
+                            <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-gray-800 text-gray-100'} p-2 lg:p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap text-left`}>{tc.input || 'N/A'}</pre>
                           </div>
                           <div>
                             <div className={`font-medium ${textPrimary} mb-1`}>Expected Output</div>
-                            <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-gray-800 text-gray-100'} p-2 lg:p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap text-left`}>{testCases[0].expected || 'N/A'}</pre>
+                            <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-gray-800 text-gray-100'} p-2 lg:p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap text-left`}>{tc.expected || 'N/A'}</pre>
                           </div>
                         </div>
                       </div>
-                    )}
+                    ))}
 
                     <div className={`pt-3 lg:pt-4 border-t ${borderClass}`}>
                       <h4 className={`text-base lg:text-lg font-semibold ${textPrimary} mb-2`}>Hints</h4>
@@ -779,13 +836,17 @@ const SolveProblem = () => {
                 />
               </div>
 
+              {/* ACTION BUTTONS (Run, Submit, Run All) */}
               <div className={`px-4 py-3 border-t ${borderClass} ${isDark ? 'bg-gray-900' : 'bg-gray-100'} flex flex-row gap-2 lg:gap-3 justify-between transition-colors duration-500 action-buttons-mobile`}>
-                <div className="flex space-x-2 lg:space-x-3 w-2/3 lg:w-1/2">
-                  <button onClick={isRunning ? handleStopCode : handleRunCode} className={`inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md transition-colors justify-center w-1/2 ${isRunning ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}><i data-feather={isRunning ? 'stop-circle' : 'play'} className="w-4 h-4 mr-1"></i>{isRunning ? 'Stop' : 'Run'}</button>
-                  <button onClick={runAllTestCases} disabled={isRunningTestCases} className="inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition-colors justify-center w-1/2"><i data-feather="check-square" className="w-4 h-4 mr-1"></i>{isRunningTestCases ? 'Testing...' : 'Run All'}</button>
-                </div>
-
+                
+                {/* Run/Stop Button (1/3 width) */}
+                <button onClick={isRunning ? handleStopCode : handleRunCode} className={`inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md transition-colors justify-center w-1/3 ${isRunning ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}><i data-feather={isRunning ? 'stop-circle' : 'play'} className="w-4 h-4 mr-1"></i>{isRunning ? 'Stop' : 'Run'}</button>
+                
+                {/* Submit Button (1/3 width) */}
                 <button onClick={handleSubmitCode} disabled={!ProblemManager.getProblemProgress(problemId)?.solved && !allTestsPassed} className="inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md bg-green-600 text-white hover:bg-green-700 transition-colors justify-center w-1/3 disabled:opacity-50"><i data-feather="send" className="w-4 h-4 mr-1"></i>Submit</button>
+                
+                {/* Run All Button (1/3 width) */}
+                <button onClick={runAllTestCases} disabled={isRunningTestCases} className="inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition-colors justify-center w-1/3"><i data-feather="check-square" className="w-4 h-4 mr-1"></i>{isRunningTestCases ? 'Testing...' : 'Run All'}</button>
               </div>
             </div>
 
@@ -793,7 +854,8 @@ const SolveProblem = () => {
             <div className={`${cardBg} rounded-none lg:rounded-xl shadow-none lg:shadow-2xl overflow-hidden transition-colors duration-500`}>
               <div className={`flex border-b ${borderClass} output-tabs`}>
                 <button onClick={() => setOutputTab('console')} className={`flex-1 py-3 px-2 lg:px-4 font-medium text-xs lg:text-sm transition-colors ${outputTab === 'console' ? `${textPrimary} border-b-2 border-green-500` : `${textSecondary} ${linkHover}`} text-center`}><i data-feather="terminal" className="w-3 h-3 lg:w-4 lg:h-4 inline-block mr-1"></i> Console</button>
-                <button onClick={() => setOutputTab('tests')} className={`flex-1 py-3 px-2 lg:px-4 font-medium text-xs lg:text-sm transition-colors ${outputTab === 'tests' ? `${textPrimary} border-b-2 border-green-500` : `${textSecondary} ${linkHover}`} text-center`}><i data-feather="clipboard" className="w-3 h-3 lg:w-4 lg:h-4 inline-block mr-1"></i> Tests</button>
+                {/* FIX: Updated tab text to include test case count */}
+                <button onClick={() => setOutputTab('tests')} className={`flex-1 py-3 px-2 lg:px-4 font-medium text-xs lg:text-sm transition-colors ${outputTab === 'tests' ? `${textPrimary} border-b-2 border-green-500` : `${textSecondary} ${linkHover}`} text-center`}><i data-feather="clipboard" className="w-3 h-3 lg:w-4 lg:h-4 inline-block mr-1"></i> Tests ({testCases.length})</button>
                 <button onClick={() => setOutputTab('history')} className={`flex-1 py-3 px-2 lg:px-4 font-medium text-xs lg:text-sm transition-colors ${outputTab === 'history' ? `${textPrimary} border-b-2 border-green-500` : `${textSecondary} ${linkHover}`} text-center`}><i data-feather="clock" className="w-3 h-3 lg:w-4 lg:h-4 inline-block mr-1"></i> History</button>
               </div>
 
@@ -804,10 +866,16 @@ const SolveProblem = () => {
                       {editorWaitingForInput && <span className="ml-2 font-normal text-green-500 text-xs">(Input Waiting...)</span>}
                       {isRunning && !editorWaitingForInput && <span className="ml-2 font-normal text-yellow-500 text-xs">(Running...)</span>}
                     </h4>
-                    <div ref={consoleRef} tabIndex={0} className={`terminal-output font-mono text-xs whitespace-pre-wrap h-24 lg:h-32 overflow-y-auto p-2 rounded-lg cursor-text text-left terminal-output-mobile ${isDark ? 'bg-black text-gray-300' : 'bg-gray-800 text-gray-100'} border ${editorWaitingForInput ? 'border-green-500 ring-2 ring-green-500/50' : borderClass} ${outputError ? 'text-red-400' : 'text-gray-300'}`}>
+                    <div 
+                      ref={consoleRef} 
+                      tabIndex={0} 
+                      // FIX: Added onKeyDown to prevent browser shortcuts on console input
+                      onKeyDown={handleConsoleKeyPress}
+                      className={`terminal-output font-mono text-xs whitespace-pre-wrap h-24 lg:h-32 overflow-y-auto p-2 rounded-lg cursor-text text-left terminal-output-mobile ${isDark ? 'bg-black text-gray-300' : 'bg-gray-800 text-gray-100'} border ${editorWaitingForInput ? 'border-green-500 ring-2 ring-green-500/50' : borderClass} ${outputError ? 'text-red-400' : 'text-gray-300'}`}
+                    >
                       {/* Render output text with inline caret at the end */}
                       <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {output}
+                        {output.replace(/█$/, '')} {/* Remove cursor if present for clean re-render */}
                         {editorWaitingForInput && (
                           <span className="console-caret" style={{ 
                             background: isDark ? 'white' : 'black',
@@ -822,34 +890,54 @@ const SolveProblem = () => {
                 {outputTab === 'tests' && (
                   <div className="space-y-3 lg:space-y-4 max-h-48 lg:max-h-64 overflow-y-auto pr-2">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 lg:gap-3">
-                      <h4 className={`text-base lg:text-lg font-bold ${textPrimary}`}>Test Cases ({testCases.length}) {allTestsPassed && <span className="ml-2 text-green-500 text-sm font-semibold">(All Passed!)</span>}</h4>
+                      <h4 className={`text-base lg:text-lg font-bold ${textPrimary}`}>
+                        Test Cases ({testCases.length}) 
+                        {/* FIX: Display accuracy from testResultSummary */}
+                        {testResultSummary && (
+                          <span className={`ml-2 text-sm font-semibold ${allTestsPassed ? 'text-green-500' : 'text-red-500'}`}>
+                            (Passed {testResultSummary.passedCount}/{testResultSummary.totalTests})
+                          </span>
+                        )}
+                        {!testResultSummary && testCases.length > 0 && <span className="ml-2 text-gray-500 text-sm font-semibold">(Run All to See Results)</span>}
+                      </h4>
                       <button onClick={runAllTestCases} disabled={isRunningTestCases} className="inline-flex items-center px-3 lg:px-4 py-1.5 lg:py-2 bg-blue-600 text-white rounded text-xs lg:text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors w-full sm:w-auto justify-center"><i data-feather="play" className="w-3 h-3 lg:w-4 lg:h-4 mr-1 lg:mr-2"></i>{isRunningTestCases ? 'Running...' : 'Run All'}</button>
                     </div>
                     <div className="space-y-3 lg:space-y-4">
-                      {testCases.map((tc) => (
+                      {testCases.map((tc, index) => (
                         <div key={tc.id} className={`p-3 lg:p-4 rounded-lg border ${borderClass} ${isDark ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
                           <div className="flex flex-col sm:flex-row justify-between items-start gap-1 lg:gap-2 mb-2 lg:mb-3">
                             <div className="flex items-center space-x-2 lg:space-x-3">
-                              <span className={`font-semibold ${textPrimary} text-sm`}>Test {tc.id}</span>
+                              <span className={`font-semibold ${textPrimary} text-sm`}>Test {index + 1}</span>
                               <span className={`px-2 py-1 rounded text-xs font-medium ${tc.status === 'Accepted' ? (isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-600/30 text-green-700') : tc.status === 'Wrong Answer' || tc.status === 'Error' ? (isDark ? 'bg-red-900/30 text-red-300' : 'bg-red-600/30 text-red-700') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-600/30 text-gray-700')}`}>{tc.status || 'Not Run'}</span>
+                              {/* FIX: Show "Hidden" label if not visible */}
+                              {!tc.isVisible && <span className={`px-2 py-1 rounded text-xs font-medium ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-300 text-gray-700'}`}>Hidden</span>}
                             </div>
                           </div>
 
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-4 text-xs lg:text-sm">
+                            {/* Input Display - Show "Hidden" if not visible */}
                             <div>
                               <div className={`font-medium ${textPrimary} mb-1`}>Input</div>
-                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>{tc.input || 'N/A'}</pre>
+                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>
+                                {tc.isVisible ? (tc.input || 'N/A') : 'Input Hidden'}
+                              </pre>
                             </div>
+                            {/* Expected Output Display - Show "Hidden" if not visible */}
                             <div>
                               <div className={`font-medium ${textPrimary} mb-1`}>Expected</div>
-                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>{tc.expected || 'N/A'}</pre>
+                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>
+                                {tc.isVisible ? (tc.expected || 'N/A') : 'Output Hidden'}
+                              </pre>
                             </div>
                           </div>
-
+                          
+                          {/* User Output Display (Always shown if test was run, content depends on visibility) */}
                           {tc.userOutput && (
                             <div className="mt-2 lg:mt-3">
                               <div className={`font-medium ${textPrimary} mb-1`}>Your Output</div>
-                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${tc.passed ? 'border-green-500' : 'border-red-500'}`}>{tc.userOutput}</pre>
+                              <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${tc.passed ? 'border-green-500' : 'border-red-500'}`}>
+                                {tc.userOutput}
+                              </pre>
                             </div>
                           )}
                         </div>
@@ -882,4 +970,4 @@ const SolveProblem = () => {
   );
 };
 
-export default SolveProblem;                            
+export default SolveProblem;

@@ -284,19 +284,33 @@ const Navbar = () => {
                                                     <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
                                                 </div>
                                                 <div className="py-1">
-                                                    <Link to="/courses" className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                        isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                                                    }`}>
+                                                    {/* UPDATED: Link to My Courses page */}
+                                                    <Link 
+                                                        to="/my-courses" 
+                                                        className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
+                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                        }`}
+                                                        onClick={() => setIsDropdownOpen(false)}
+                                                    >
                                                         <i data-feather="book-open" className="w-4 h-4 mr-2"></i> My Courses
                                                     </Link>
-                                                    <Link to="/problems" className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                        isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                                                    }`}>
-                                                        <i data-feather="target" className="w-4 h-4 mr-2"></i> My Progress
+                                                    {/* UPDATED: Link to My Progress page */}
+                                                    <Link 
+                                                        to="/my-progress" 
+                                                        className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
+                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                        }`}
+                                                        onClick={() => setIsDropdownOpen(false)}
+                                                    >
+                                                        <i data-feather="bar-chart-2" className="w-4 h-4 mr-2"></i> My Progress
                                                     </Link>
-                                                    <Link to="/settings" className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                        isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                                                    }`}>
+                                                    <Link 
+                                                        to="/settings" 
+                                                        className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
+                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                        }`}
+                                                        onClick={() => setIsDropdownOpen(false)}
+                                                    >
                                                         <i data-feather="settings" className="w-4 h-4 mr-2"></i> Settings
                                                     </Link>
                                                     <button 
@@ -390,28 +404,31 @@ const Navbar = () => {
                                         </div>
                                     )}
 
-                                    {/* Quick Actions - Removed original quick links since they are now in the bottom nav */}
-                                    {/* I will keep the settings/progress link, and remove links that are now primary. */}
+                                    {/* Quick Actions - Updated links to point to correct pages */}
                                     {isLoggedIn && (
                                         <div className={`p-4 border-b ${mobileBorderClass}`}>
                                             <div className="grid grid-cols-2 gap-2">
+                                                {/* UPDATED: Link to My Progress page */}
                                                 <Link 
-                                                    to="/progress" 
+                                                    to="/my-progress" 
                                                     className={`flex flex-col items-center p-3 rounded-lg transition-colors duration-200 group ${mobileCardBgClass} ${mobileHoverBgClass}`}
+                                                    onClick={toggleMobileMenu}
                                                 >
                                                     <i data-feather="bar-chart-2" className="w-5 h-5 text-primary-500 mb-1 group-hover:scale-110 transition-transform"></i>
                                                     <span className={`text-xs group-hover:scale-105 transition-transform ${
                                                         isDarkMode ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
-                                                    }`}>Progress</span>
+                                                    }`}>My Progress</span>
                                                 </Link>
+                                                {/* UPDATED: Link to My Courses page */}
                                                 <Link 
-                                                    to="/settings" 
+                                                    to="/my-courses" 
                                                     className={`flex flex-col items-center p-3 rounded-lg transition-colors duration-200 group ${mobileCardBgClass} ${mobileHoverBgClass}`}
+                                                    onClick={toggleMobileMenu}
                                                 >
-                                                    <i data-feather="settings" className="w-5 h-5 text-primary-500 mb-1 group-hover:scale-110 transition-transform"></i>
+                                                    <i data-feather="book-open" className="w-5 h-5 text-primary-500 mb-1 group-hover:scale-110 transition-transform"></i>
                                                     <span className={`text-xs group-hover:scale-105 transition-transform ${
                                                         isDarkMode ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
-                                                    }`}>Settings</span>
+                                                    }`}>My Courses</span>
                                                 </Link>
                                             </div>
                                         </div>

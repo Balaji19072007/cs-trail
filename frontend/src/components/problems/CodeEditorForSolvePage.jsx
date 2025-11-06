@@ -1,8 +1,8 @@
 // src/components/problems/CodeEditorForSolvePage.jsx
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import Editor from '@monaco-editor/react';
-import { io } from 'socket.io-client';
-import { API_CONFIG } from '../../config/api.js'; // adjust path if needed
+import { API_CONFIG } from '../../config/api.js'; 
+import { sendInputToProgram, setupCompilerSocket, sendCodeForExecution, stopCodeExecution } from '../../api/problemApi.js'; // FIX: Import utilities
 
 // --- CONFIGURATION ---
 const MONACO_LANGUAGE_MAP = {
@@ -13,11 +13,15 @@ const EXECUTION_LANGUAGE_MAP = {
 };
 
 const DEFAULT_CODE = {
-  'C': `#include <stdio.h>\n\nint main() {\n    int number;\n    printf("Please enter a number: ");\n    scanf("%d", &number);\n    printf("You entered: %d\\n", number);\n    return 0;\n}`,
-  'C++': `#include <iostream>\nusing namespace std;\n\nint main() {\n    int number;\n    cout << "Enter a number: ";\n    cin >> number;\n    cout << "You entered: " << number << endl;\n    return 0;\n}`,
-  'Java': `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        System.out.print("Enter a number: ");\n        int number = scanner.nextInt();\n        System.out.println("You entered: \" + number);\n        scanner.close();\n    }\n}`,
-  'Python': `user_input = input("Enter number: ")\nprint("You entered:", user_input)`,
-  'JavaScript': `const readline = require('readline');\n\nconst rl = readline.createInterface({\n  input: process.stdin,\n  output: process.stdout\n});\n\nrl.question('Enter number: ', (answer) => {\n  console.log('You entered:', answer);\n  rl.close();\n});`
+  'C': `#include <stdio.h>\n\nint main() {\n    // Write your code here\n    return 0;\n}`,
+  
+  'C++': `#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your code here\n    return 0;\n}`,
+  
+  'Java': `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        // Write your code here\n    }\n}`,
+  
+  'Python': `\n# Write your code here\n`,
+  
+  'JavaScript': `// Write your code here\nconst solution = (input) => {\n  return "Output";\n};`
 };
 
 const CodeEditorForSolvePage = forwardRef(({
@@ -29,8 +33,8 @@ const CodeEditorForSolvePage = forwardRef(({
 }, ref) => {
 
   const [code, setCode] = useState(initialCode);
-  const [language, setLanguage] = useState(propLanguage);
-  const [theme, setTheme] = useState(propTheme);
+  const [language] = useState(propLanguage);
+  const [theme] = useState(propTheme);
 
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
 
@@ -43,39 +47,20 @@ const CodeEditorForSolvePage = forwardRef(({
   // Sync props to internal state
   useEffect(() => {
     setCode(initialCode);
-    setTheme(propTheme);
-    setLanguage(propLanguage);
+    // Theme and Language props are read-only here
   }, [initialCode, propTheme, propLanguage]);
 
-  // --- Socket.IO Initialization and Listeners ---
+  // --- Socket.IO Initialization and Listeners (FIXED) ---
   useEffect(() => {
-    socketRef.current = io(API_CONFIG.SOCKET_URL);
-
-    socketRef.current.on('execution-result', (result) => {
-      if (onOutputReceived) {
-          onOutputReceived(
-              result.success ? (result.output || 'Execution finished.') : (result.error || 'Execution failed'),
-              !result.success,
-              false // isRunning = false
-          );
-      }
-      setIsWaitingForInput(false);
-    });
-
-    socketRef.current.on('execution-output', (data) => {
-      if (onOutputReceived && data.output) {
-          const output = data.output;
-          // avoid showing user-echoed input (we handle that locally)
-          if (!inputBufferRef.current || !output.includes(inputBufferRef.current)) {
-              onOutputReceived(output, false, true);
-          }
-      }
-    });
-
-    socketRef.current.on('waiting-for-input', () => {
-      setIsWaitingForInput(true);
-      // focus the console DOM node when waiting for input
-      setTimeout(() => consoleDomRef.current?.focus?.(), 0);
+    // FIX: Use setupCompilerSocket which now handles all listeners and disconnections
+    socketRef.current = setupCompilerSocket((output, isError, isRunningState, isWaitingInput) => {
+        if (isWaitingInput !== undefined) {
+            setIsWaitingForInput(isWaitingInput);
+        }
+        if (onOutputReceived) {
+            // Pass all state info (including isWaitingInput) to parent
+            onOutputReceived(output, isError, isRunningState, isWaitingInput);
+        }
     });
 
     return () => {
@@ -85,40 +70,39 @@ const CodeEditorForSolvePage = forwardRef(({
     };
   }, [onOutputReceived]);
 
-  // Handle keyboard input when waiting for input (fixed backspace handling)
+  // --- Handle keyboard input when waiting for input (FIXED) ---
   useEffect(() => {
-    const handleTerminalKeyPress = (e) => {
+    const handleConsoleKeyPress = (e) => {
       if (!isWaitingForInput) return;
+      // Ensure the active element is the console itself before processing keys
       if (!consoleDomRef.current || document.activeElement !== consoleDomRef.current) return;
 
-      // prevent default so Backspace / Enter don't navigate/back
+      // Prevent default browser behavior for common keys
       if (['Enter', 'Backspace'].includes(e.key) || e.key.length === 1) {
         e.preventDefault();
       }
 
       if (e.key === 'Enter') {
         const inputToSend = inputBufferRef.current;
-        if (onOutputReceived) onOutputReceived('\n', false, true); // newline echo
+        
+        // 1. Send the input via the problemApi helper
+        sendInputToProgram(socketRef.current, inputToSend);
+        
+        // 2. Notify parent to append a newline after the echoed input
+        if (onOutputReceived) onOutputReceived('\n', false, true);
 
-        if (socketRef.current && socketRef.current.connected) {
-          socketRef.current.emit('send-input', inputToSend);
-        }
-        // append newline in parent's console via callback
-        if (onOutputReceived) onOutputReceived(inputToSend + '\n', false, true);
-
-        // reset buffer and state
+        // 3. Reset buffer and switch state
         inputBufferRef.current = '';
         setIsWaitingForInput(false);
         return;
       }
 
       if (e.key === 'Backspace') {
-        // remove last char from buffer and update parent's console display
+        // Remove last char from buffer and update parent's console display
         if (inputBufferRef.current.length > 0) {
           inputBufferRef.current = inputBufferRef.current.slice(0, -1);
           if (onOutputReceived) {
-            // Send control sequence back to parent: remove last char visually
-            // parent should handle \b in its output processor; we also provide full buffer
+            // Send backspace control sequence to parent for visual removal
             onOutputReceived('\b', false, true);
           }
         }
@@ -128,45 +112,37 @@ const CodeEditorForSolvePage = forwardRef(({
       // normal printable character
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
         inputBufferRef.current += e.key;
+        // Echo the character immediately to the parent's console display
         if (onOutputReceived) onOutputReceived(e.key, false, true);
       }
     };
 
-    document.addEventListener('keydown', handleTerminalKeyPress);
+    document.addEventListener('keydown', handleConsoleKeyPress);
     return () => {
-      document.removeEventListener('keydown', handleTerminalKeyPress);
+      document.removeEventListener('keydown', handleConsoleKeyPress);
     };
   }, [isWaitingForInput, onOutputReceived]);
 
-  // auto-focus console when waiting for input
-  useEffect(() => {
-    if (isWaitingForInput) {
-      setTimeout(() => consoleDomRef.current?.focus?.(), 0);
-    }
-  }, [isWaitingForInput]);
 
-  const handleRunCode = useCallback((codeToRun, userInput) => {
+  const handleRunCode = useCallback((codeToRun) => {
     if (!socketRef.current || !socketRef.current.connected) {
       if (onOutputReceived) onOutputReceived('Compiler service is disconnected. Check network.', true, false);
       return;
     }
     setIsWaitingForInput(false);
     inputBufferRef.current = '';
-    if (onOutputReceived) onOutputReceived('Executing.\n', false, true);
 
     const executionLanguage = EXECUTION_LANGUAGE_MAP[language] || language.toLowerCase();
 
-    socketRef.current.emit('execute-code', {
-      language: executionLanguage,
-      code: codeToRun,
-      userInput: userInput || '',
-    });
+    // FIX: Use imported sendCodeForExecution helper
+    sendCodeForExecution(socketRef.current, codeToRun, executionLanguage);
+
   }, [language, onOutputReceived]);
 
   const handleStopExecution = useCallback(() => {
-    if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit('stop-execution');
-    }
+    // FIX: Use imported stopCodeExecution helper
+    stopCodeExecution(socketRef.current);
+
     setIsWaitingForInput(false);
     inputBufferRef.current = '';
   }, []);
@@ -178,14 +154,15 @@ const CodeEditorForSolvePage = forwardRef(({
 
   const handleEditorDidMount = (editor) => {
     editorRef.current = editor;
-    // keep focus on mount for quick editing
     setTimeout(() => editor?.focus?.(), 50);
   };
 
+  // --- Expose public methods via ref (FIXED) ---
   useImperativeHandle(ref, () => ({
-    runCode: (c, userInput) => handleRunCode(c, userInput),
+    runCode: (c) => handleRunCode(c),
     stopCode: handleStopExecution,
     getCode: () => editorRef.current?.getValue() || code,
+    // EXPOSED: Function to receive the parent's console DOM node
     setTerminalRef: (node) => { consoleDomRef.current = node; },
     getIsWaitingForInput: () => isWaitingForInput,
   }));

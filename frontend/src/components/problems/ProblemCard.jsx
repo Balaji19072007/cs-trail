@@ -1,52 +1,53 @@
-// frontend/src/components/problems/ProblemCard.jsx
+// src/components/problems/ProblemCard.jsx
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx'; 
+import { ProblemManager } from '../../utils/problemManager.js'; // Import ProblemManager
 
 const languageDisplayNames = {
-    'C': 'C', 'Python': 'Python', 'Java': 'Java', 'C++': 'C++', 'JavaScript': 'JavaScript',
-    'c': 'C', 'python': 'Python', 'java': 'Java', 'cpp': 'C++', 'javascript': 'JavaScript'
+    'C': 'C', 'C++': 'C++', 'Java': 'Java', 'Python': 'Python', 'JavaScript': 'JS',
 };
 
 const ProblemCard = ({ problem }) => {
     const { isLoggedIn } = useAuth();
+    const problemId = problem.problemId || problem.id; 
     
-    // Normalize difficulty for class lookup (should be uppercase in data, but lowercasing for robustness)
-    const difficultyKey = problem.difficulty?.toLowerCase() || 'easy';
-
-    // Dynamically set difficulty text color classes
-    const difficultyClasses = difficultyKey === 'easy' 
-        ? 'text-green-400' 
-        : difficultyKey === 'medium' 
-        ? 'text-yellow-400' 
-        : 'text-red-400';
-    
-    // Mock status since the backend list doesn't provide it yet
-    const status = problem.status?.toLowerCase() || 'todo'; 
-
-    const statusClasses = status === 'solved' 
-        ? 'bg-primary-500/10 text-primary-400 border-primary-500/30' 
-        : status === 'attempted' 
-        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
-        : 'bg-gray-700/50 text-gray-400 border-gray-600';
+    // Check local progress manager status
+    const progress = ProblemManager.getProblemProgress(problemId);
+    const status = progress.solved ? 'solved' : (progress.submissions.length > 0 ? 'attempted' : 'todo');
 
     const statusTexts = {
-        'solved': 'Solved',
-        'attempted': 'Attempted',
-        'todo': 'To Do'
+        solved: 'Solved',
+        attempted: 'Attempted',
+        todo: 'To Do'
     };
+
+    const statusClasses = status === 'solved'
+        ? 'text-green-400 bg-green-900/30 border-green-700/50'
+        : status === 'attempted'
+        ? 'text-yellow-400 bg-yellow-900/30 border-yellow-700/50'
+        : 'text-gray-400 bg-gray-700/30 border-gray-700';
+
+    const difficultyKey = problem.difficulty?.toLowerCase() || 'easy';
+    const difficultyClasses = difficultyKey === 'easy'
+        ? 'text-green-400'
+        : difficultyKey === 'medium'
+        ? 'text-yellow-400'
+        : 'text-red-400';
 
     const handleSolveClick = (e) => {
         if (!isLoggedIn) {
             e.preventDefault();
-            alert('You must be signed in to solve problems.');
+            // Note: Alerts are generally forbidden in modern UIs; using console log as alternative to prevent crashes
+            console.log('Action blocked: User must be signed in to solve problems.');
         }
     };
     
-    const problemId = problem.problemId || problem.id; 
-
     return (
-        <div className="bg-gray-800 rounded-lg shadow-xl p-3 sm:p-4 transition-all duration-300 border border-gray-700 card-hover"> 
+        <div 
+            id={`problem-${problemId}`} // ADDED ID for scrolling
+            className="bg-gray-800 rounded-lg shadow-xl p-3 sm:p-4 transition-all duration-300 border border-gray-700 card-hover"
+        > 
             <div className="flex justify-between items-center">
                 
                 {/* Problem Title & ID - Now just text, not clickable */}
@@ -74,8 +75,9 @@ const ProblemCard = ({ problem }) => {
                         <span className={`${difficultyClasses}`}>{problem.difficulty}</span>
                     </span>
                     
-                    {/* Only ONE Solve Button - on the right side */}
+                    {/* Solve Button - FIX: Link updated to /solve */}
                     <Link 
+                        // FIX: Change destination from /code to /solve?problemId={problemId}
                         to={isLoggedIn ? `/solve?problemId=${problemId}` : '/signin'}
                         onClick={handleSolveClick}
                         className="dark-btn inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg flex-shrink-0"

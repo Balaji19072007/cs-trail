@@ -1,11 +1,12 @@
 // frontend/src/api/problemApi.js
 
 import { io } from 'socket.io-client';
+import api from '../services/apiService'; // Import the configured axios instance
 
 const API_BASE_URL = 'http://localhost:5000/api/problems';
 const SOCKET_URL = 'http://localhost:5000';
 
-// Mock data for problems (fallback when backend is unavailable)
+// Mock data (RETAINED for fallback on fetchProblemById)
 const MOCK_PROBLEMS = {
   1: {
     id: 1,
@@ -105,6 +106,7 @@ const MOCK_PROBLEMS = {
   }
 };
 
+
 // Simulate API delay
 const simulateDelay = (ms = 1000) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -155,153 +157,80 @@ export const fetchProblemById = async (id) => {
 };
 
 /**
- * Submits a solution for evaluation
+ * Fetches ALL test cases (visible and hidden) for a problem.
+ * NEW FUNCTION ADDED
+ */
+export const fetchProblemTestCases = async (id) => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/${id}/test-cases`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch test cases for problem ${id}.`);
+        }
+        const data = await response.json();
+        return data.testCases || [];
+    } catch (error) {
+        console.warn('Backend /test-cases unavailable, using mock data for all tests:', error.message);
+        await simulateDelay(300);
+        
+        const problem = MOCK_PROBLEMS[id];
+        if (problem && problem.testCases) {
+            return problem.testCases;
+        }
+        
+        return [];
+    }
+}
+
+/**
+ * Submits a solution for evaluation.
+ * Uses the protected route POST /api/problems/:id/submit.
  */
 export const submitSolution = async (problemId, code, language) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/${problemId}/submit`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code, language })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to submit solution');
-        }
-        
-        return response.json();
-    } catch (error) {
-        console.warn('Backend unavailable, using mock submission:', error.message);
-        await simulateDelay(2000);
-        
-        const problem = MOCK_PROBLEMS[problemId];
-        if (!problem) {
-            throw new Error(`Problem with ID ${problemId} not found`);
-        }
-
-        // Simulate more rigorous testing for submission (includes hidden test cases)
-        const publicTestResults = problem.testCases.map(testCase => {
-            const passed = Math.random() > 0.2; // 80% chance of passing public tests
-            
-            return {
-                passed,
-                output: passed ? testCase.expected : "incorrect output",
-                error: passed ? "" : "Wrong Answer"
-            };
-        });
-
-        // Simulate hidden test cases (more strict)
-        const hiddenTestResults = [
-            { passed: Math.random() > 0.4, output: "25", error: "" },
-            { passed: Math.random() > 0.4, output: "100", error: "" },
-            { passed: Math.random() > 0.4, output: "true", error: "" }
-        ];
-
-        const allTestResults = [...publicTestResults, ...hiddenTestResults];
-        const allPassed = allTestResults.every(result => result.passed);
-
-        return {
-            problemId,
-            testResults: allTestResults,
-            allPassed,
-            passedCount: allTestResults.filter(result => result.passed).length,
-            failedCount: allTestResults.filter(result => !result.passed).length,
-            executionTime: `${(Math.random() * 100 + 50).toFixed(2)} ms`,
-            memoryUsed: `${(Math.random() * 10 + 5).toFixed(1)} MB`
-        };
-    }
+    // NEW: Use authenticated api service for protected route
+    const response = await api.post(`${API_BASE_URL}/${problemId}/submit`, { 
+        code, 
+        language 
+    });
+    
+    // Axios wraps the response in a 'data' property
+    return response.data;
 };
 
 /**
- * Runs code against test cases
+ * Runs code against all test cases.
+ * Uses the protected route POST /api/problems/:id/run-tests.
  */
 export const runTestCases = async (problemId, code, language) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/${problemId}/test`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code, language })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to run test cases');
-        }
-        
-        return response.json();
-    } catch (error) {
-        console.warn('Backend unavailable, using mock test execution:', error.message);
-        await simulateDelay(1500);
-        
-        const problem = MOCK_PROBLEMS[problemId];
-        if (!problem) {
-            throw new Error(`Problem with ID ${problemId} not found`);
-        }
-
-        // Simulate test case execution
-        const testResults = problem.testCases.map(testCase => {
-            // Simulate different outcomes based on the code content
-            const hasSyntaxError = code.includes('syntaxerror') || code.includes('undefined');
-            const hasRuntimeError = code.includes('runtimeerror') || code.includes('division by zero');
-            
-            if (hasSyntaxError) {
-                return {
-                    passed: false,
-                    error: "SyntaxError: invalid syntax",
-                    output: ""
-                };
-            }
-            
-            if (hasRuntimeError) {
-                return {
-                    passed: false,
-                    error: "RuntimeError: division by zero",
-                    output: ""
-                };
-            }
-            
-            // Check if code might produce correct output
-            const isLikelyCorrect = 
-                (problemId === 1 && (code.includes('sum(') || code.includes('+='))) ||
-                (problemId === 2 && (code.includes('max(') || code.includes('>') && code.includes('for'))) ||
-                (problemId === 3 && (code.includes('[::-1]') || code.includes('==') && code.includes('reverse')));
-            
-            const passed = Math.random() > 0.3 || isLikelyCorrect; // 70% chance of passing if code looks correct
-            
-            return {
-                passed,
-                output: passed ? testCase.expected : "wrong output",
-                error: passed ? "" : "Wrong Answer"
-            };
-        });
-
-        return {
-            problemId,
-            testResults,
-            allPassed: testResults.every(result => result.passed),
-            passedCount: testResults.filter(result => result.passed).length,
-            failedCount: testResults.filter(result => !result.passed).length
-        };
-    }
+    // NEW: Use authenticated api service for protected route
+    const response = await api.post(`${API_BASE_URL}/${problemId}/run-tests`, { 
+        code, 
+        language 
+    });
+    
+    // Axios wraps the response in a 'data' property
+    return response.data;
 };
 
 /**
  * Sets up the WebSocket client for real-time code compilation.
- * @param {function} onOutputCallback - Function to call when output is received.
- * @returns {object} The Socket.IO instance.
  */
 export const setupCompilerSocket = (onOutputCallback) => {
     const socket = io(SOCKET_URL);
 
-    socket.on('output', (data) => {
-        onOutputCallback(data.text, data.isError, data.isRunning);
+    // This handles final execution completion/error
+    socket.on('execution-result', (result) => {
+        onOutputCallback(result.output, !result.success, false); // Pass output, error status, and isRunning=false
+    });
+    
+    // This handles real-time output (stdout/stderr chunks)
+    socket.on('execution-output', (data) => {
+        onOutputCallback(data.output, Boolean(data.isError), true); // isRunning=true
     });
 
-    socket.on('execution_result', (data) => {
-        onOutputCallback(data.output, data.error, false);
+    // This signals the client to prompt for input
+    socket.on('waiting-for-input', () => {
+        // Pass a specific flag to the callback indicating input is needed
+        onOutputCallback('', false, true, true); 
     });
 
     socket.on('connect_error', (err) => {
@@ -321,22 +250,13 @@ export const setupCompilerSocket = (onOutputCallback) => {
  */
 export const sendCodeForExecution = (socketInstance, code, language, input = '') => {
     if (socketInstance && socketInstance.connected) {
-        socketInstance.emit('execute_code', { 
+        socketInstance.emit('execute-code', { 
             code, 
             language: language.toLowerCase(),
-            input 
+            input // Pass user input buffer in the initial request
         });
     } else {
         throw new Error('Compiler socket is not connected.');
-    }
-};
-
-/**
- * Stops code execution
- */
-export const stopCodeExecution = (socketInstance) => {
-    if (socketInstance && socketInstance.connected) {
-        socketInstance.emit('stop_execution');
     }
 };
 
@@ -345,6 +265,16 @@ export const stopCodeExecution = (socketInstance) => {
  */
 export const sendInputToProgram = (socketInstance, input) => {
     if (socketInstance && socketInstance.connected) {
-        socketInstance.emit('send_input', { input });
+        // FIX: Socket input event should emit the raw input string
+        socketInstance.emit('send-input', input); 
+    }
+};
+
+/**
+ * Stops code execution
+ */
+export const stopCodeExecution = (socketInstance) => {
+    if (socketInstance && socketInstance.connected) {
+        socketInstance.emit('stop-execution');
     }
 };

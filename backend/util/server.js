@@ -1,5 +1,7 @@
-// --- Configuration & Setup ---
-require('dotenv').config(); 
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -8,168 +10,1055 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path'); 
+const rateLimit = require('express-rate-limit');
+const { v2: cloudinary } = require('cloudinary'); 
+const multer = require('multer');
+const statsRoutes = require('./routes/statsRoutes');
 
 const app = express();
 const server = http.createServer(app);
 
 // --- Model Imports ---
-const User = require('./models/User'); 
-const Problem = require('./models/Problem'); 
+const User = require('./models/User');
+const Problem = require('./models/Problem');
 
 // --- Controller & Route Imports ---
 const authRoutes = require('./routes/authRoutes');
-const googleAuthRoutes = require('./routes/googleAuthRoutes'); 
-const problemRoutes = require('./routes/problemRoutes'); 
+const googleAuthRoutes = require('./routes/googleAuthRoutes');
+const problemRoutes = require('./routes/problemRoutes');
 const leaderboardRoutes = require('./routes/leaderboardRoutes');
+const predictionRoutes = require('./routes/predictionRoutes');
+app.use('/api/stats', statsRoutes);
 
-
-// --- Global Middleware ---
-// CORS Configuration
+// Enable CORS for all routes
 app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
+  origin: 'http://localhost:5173', // Your frontend URL
+  credentials: true
 }));
 
+// Or for all origins (less secure but works for development)
+app.use(cors());
+// --- Global Middleware ---
+
+// CORS Configuration
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+  credentials: true
+};
+app.use(cors(corsOptions));
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'API is working!' });
+})
 // Body Parser Middleware
 app.use(bodyParser.json());
 
+// Debug middleware to log all incoming requests
+app.use((req, res, next) => {
+  console.log(`📍 ${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Rate Limiting for Auth Routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per window
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/signin', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+
+// --- CLOUDINARY & MULTER SETUP ---
+
+if (
+  !process.env.CLOUDINARY_CLOUD_NAME ||
+  !process.env.CLOUDINARY_API_KEY ||
+  !process.env.CLOUDINARY_API_SECRET
+) {
+  console.error('❌ WARNING: Cloudinary credentials are missing. Image upload will fail.');
+} else {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+  console.log('☁️  Cloudinary configured successfully.');
+  app.set('cloudinary', cloudinary);
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(), 
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+});
+app.set('upload', upload);
+// ------------------------------------
+
 // --- Database Connection ---
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/cs-studio';
 
-// Security Check: Ensure MONGO_URI is available
 if (!MONGO_URI) {
-    console.error('FATAL ERROR: MONGO_URI is not defined in the environment variables (e.g., in your .env file).');
-    process.exit(1); 
+  console.error('❌ FATAL ERROR: MONGO_URI is not defined in environment variables.');
+  process.exit(1);
 }
 
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('MongoDB connected successfully!'))
-    .catch(err => {
-        console.error('MongoDB connection error:', err);
-    });
+mongoose
+  .connect(MONGO_URI)
+  .then(async () => {
+    console.log('✅ MongoDB Connected Successfully');
+  })
+  .catch(err => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    process.exit(1);
+  });
 
-
-// --- Data Seeding (Automatic DB Initialization) ---
-async function seedDatabase() {
-    try {
-        const userCount = await User.countDocuments();
-        if (userCount === 0) {
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash('password123', salt);
-            
-            const mockUsers = [
-                { firstName: 'Sarah', lastName: 'Chen', email: 'sarah.c@example.com', password: hashedPassword, username: 'sarahc', totalPoints: 5120, currentStreak: 67 },
-                { firstName: 'New', lastName: 'User', email: 'test@example.com', password: hashedPassword, username: 'testuser', totalPoints: 10, currentStreak: 1 }
-            ];
-            await User.insertMany(mockUsers.map(u => ({
-                ...u,
-                username: u.username || `${u.firstName.toLowerCase()}${u.lastName.toLowerCase()}`,
-            })));
-            console.log('Database seeded with 2 mock users for leaderboard.');
-        }
-
-        const problemCount = await Problem.countDocuments();
-        if (problemCount === 0) {
-            const mockProblems = [
-                { problemId: 1, title: "Two Sum", difficulty: 'Easy', language: 'JavaScript', problemStatement: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.", acceptanceRate: '52.3%' },
-                { problemId: 2, title: "Reverse Linked List", difficulty: 'Medium', language: 'Python', problemStatement: "Given the head of a singly linked list, reverse the list, and return the reversed list.", acceptanceRate: '45.1%' },
-            ];
-            await Problem.insertMany(mockProblems.map(p => ({ ...p })));
-            console.log('Database seeded with 2 mock problems.');
-        }
-        
-    } catch (error) {
-        console.error('Error seeding database:', error.message);
-    }
-}
-
-mongoose.connection.once('open', seedDatabase);
-
-
-// ----------------------------------------------------
-// --- API Route Mounting ---
-// ----------------------------------------------------
+// --- API Routes ---
 app.use('/api/auth', authRoutes);
-app.use('/api/auth/google', googleAuthRoutes); 
+app.use('/api/google-auth', googleAuthRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
-
-// ----------------------------------------------------
-// --- STATIC FILE SERVING (FRONTEND) FIX ---
-// This section ensures the website loads correctly on port 5000.
-// ----------------------------------------------------
-// Use __dirname to find the 'public' folder inside the backend directory
-const frontendPath = path.join(__dirname, 'public'); 
-
-// 1. Serve static assets (HTML, JS, CSS, images) from the public directory
-app.use(express.static(frontendPath));
-
-// 2. Handle specific HTML file requests (e.g., /settings.html)
-app.get('/:page.html', (req, res) => {
-    const filename = req.params.page + '.html';
-    res.sendFile(path.join(frontendPath, filename), (err) => {
-        if (err) {
-            console.error(`Error serving file ${filename}:`, err.message);
-            res.status(404).send('Page not found');
-        }
-    });
+app.use('/predict', predictionRoutes);
+app.use('/api/stats', require('./routes/statsRoutes'));
+// --- Health Check Endpoint ---
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+  });
 });
 
-// 3. Fallback to serve index.html for the root path (http://localhost:5000/)
-app.get('/', (req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
-});
-// ----------------------------------------------------
+// ===================================================================
+// --- Socket.IO: MULTI-LANGUAGE EXECUTION WITH INPUT SUPPORT ---
+// ===================================================================
 
-
-// --- Code Compiler Service (Socket.IO Integration) ---
 const io = new Server(server, {
-    cors: {
-        origin: '*',
-        methods: ['GET', 'POST']
-    }
+  cors: corsOptions
 });
 
-// Helper function for Piston API execution (remains the same)
-async function executeCode(code, language) {
-    try {
-        const response = await axios.post('https://emkc.org/api/v2/piston/execute', {
-            language: language,
-            version: '*', 
-            files: [{ content: code }]
-        });
-        const data = response.data;
-        // The original logic for extracting execution time is complex, using a simple check for brevity/consistency
-        const executionTime = data.run.stdout ? (data.run.stdout.split('\n')[0].match(/Time: (\d+\.\d+s)/)?.[1] || 'N/A') : 'N/A';
-        
-        if (data.run.stderr) {
-            return { status: 'Runtime Error', text: data.run.stderr.trim(), executionTime: executionTime };
-        } else if (data.compile && data.compile.stderr) {
-            return { status: 'Compilation Error', text: data.compile.stderr.trim(), executionTime: 'N/A' };
-        } else {
-            return { status: 'Success', text: data.run.stdout.trim(), executionTime: executionTime };
-        }
+// Store execution sessions
+const executionSessions = new Map();
 
-    } catch (error) {
-        console.error('Piston API Execution Error:', error.message);
-        return { status: 'API Error', text: `Failed to connect to compiler service. Check server logs. ${error.message}`, executionTime: 'N/A' };
+// Helper function to clean up temp files
+function cleanupTempFile(tempFile) {
+  try {
+    if (tempFile && fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile);
     }
+  } catch (e) {
+    console.error('Error cleaning temp file:', e.message);
+  }
 }
 
+// Helper function to clean up multiple files
+function cleanupFiles(files) {
+  files.forEach(file => {
+    if (file && fs.existsSync(file)) {
+      try {
+        fs.unlinkSync(file);
+      } catch (e) {
+        console.error('Error cleaning file:', file, e.message);
+      }
+    }
+  });
+}
+
+// Test GCC and G++ availability on server start
+function testCompilers() {
+  console.log('🔧 Testing compiler availability...');
+  
+  // Test GCC
+  const gccTest = spawn('gcc', ['--version']);
+  gccTest.stdout.on('data', (data) => {
+    console.log('✅ GCC is available:', data.toString().split('\n')[0]);
+  });
+  gccTest.stderr.on('data', (data) => {
+    console.error('❌ GCC test error:', data.toString());
+  });
+  gccTest.on('close', (code) => {
+    console.log(`🔧 GCC test exited with code: ${code}`);
+  });
+  gccTest.on('error', (err) => {
+    console.error('❌ GCC not found in PATH:', err.message);
+  });
+
+  // Test G++
+  const gppTest = spawn('g++', ['--version']);
+  gppTest.stdout.on('data', (data) => {
+    console.log('✅ G++ is available:', data.toString().split('\n')[0]);
+  });
+  gppTest.stderr.on('data', (data) => {
+    console.error('❌ G++ test error:', data.toString());
+  });
+  gppTest.on('close', (code) => {
+    console.log(`🔧 G++ test exited with code: ${code}`);
+  });
+  gppTest.on('error', (err) => {
+    console.error('❌ G++ not found in PATH:', err.message);
+  });
+}
+
+// Call compiler test on server start
+testCompilers();
 
 io.on('connection', (socket) => {
-    socket.on('runCode', async (data) => {
-        const result = await executeCode(data.code, data.language);
-        socket.emit('output', result);
+  console.log(`🔌 Socket connected: ${socket.id}`);
+
+  // Execute code with interactive input
+  socket.on('execute-code', async (data) => {
+    const { language, code } = data;
+    
+    console.log(`⚡ Executing ${language} code for socket ${socket.id}`);
+    
+    try {
+      // Clean previous session
+      if (executionSessions.has(socket.id)) {
+        const oldSession = executionSessions.get(socket.id);
+        if (oldSession.process) {
+          oldSession.process.kill();
+        }
+        executionSessions.delete(socket.id);
+      }
+
+      // Create a temporary directory
+      const tempDir = path.join(__dirname, 'temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const sessionId = `${socket.id}_${Date.now()}`;
+
+      // Validate and clean code
+      const cleanedCode = code.replace(/^-\s+/gm, '');
+
+      switch (language.toLowerCase()) {
+        case 'python':
+          await executePython(cleanedCode, socket, sessionId, tempDir);
+          break;
+        
+        case 'c':
+          await executeC(cleanedCode, socket, sessionId, tempDir);
+          break;
+        
+        case 'cpp':
+          await executeCpp(cleanedCode, socket, sessionId, tempDir);
+          break;
+        
+        case 'java':
+          await executeJava(cleanedCode, socket, sessionId, tempDir);
+          break;
+        
+        case 'javascript':
+          await executeJavaScript(cleanedCode, socket, sessionId, tempDir);
+          break;
+        
+        default:
+          throw new Error(`Unsupported language: ${language}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Execution setup failed:', error);
+      socket.emit('execution-result', {
+        success: false,
+        error: `Execution setup failed: ${error.message}`
+      });
+    }
+  });
+
+  // Handle user input
+  socket.on('send-input', (input) => {
+    const session = executionSessions.get(socket.id);
+    if (session && session.process && session.isRunning) {
+      console.log(`📥 Input received for ${socket.id} (${session.language}): "${input}"`);
+      
+      // Reset input expected flag
+      session.inputExpected = false;
+      
+      // Write input to the process's STDIN with newline
+      session.process.stdin.write(input + '\n');
+      
+    } else {
+      socket.emit('execution-output', {
+        output: '\n[Error: No active execution session]',
+        isError: true
+      });
+    }
+  });
+
+  // Stop execution
+  socket.on('stop-execution', () => {
+    console.log(`🛑 Stopping execution for socket ${socket.id}`);
+    const session = executionSessions.get(socket.id);
+    if (session) {
+      if (session.process) {
+        session.process.kill();
+      }
+      cleanupFiles(session.tempFiles || []);
+      executionSessions.delete(socket.id);
+    }
+    socket.emit('execution-result', {
+      success: false,
+      output: '\n[Execution stopped by user]'
     });
+  });
+
+  // Cleanup on disconnect
+  socket.on('disconnect', () => {
+    console.log(`🔌 Socket disconnected: ${socket.id}`);
+    const session = executionSessions.get(socket.id);
+    if (session) {
+      if (session.process) {
+        session.process.kill();
+      }
+      cleanupFiles(session.tempFiles || []);
+      executionSessions.delete(socket.id);
+    }
+  });
 });
 
+// ===================================================================
+// --- LANGUAGE EXECUTION FUNCTIONS ---
+// ===================================================================
 
-// --- Server Start ---
+// Python Execution
+function executePython(code, socket, sessionId, tempDir) {
+  return new Promise((resolve) => {
+    const tempFile = path.join(tempDir, `${sessionId}.py`);
+    fs.writeFileSync(tempFile, code);
+
+    const pythonProcess = spawn('python', [tempFile], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 15000
+    });
+
+    // Store session
+    executionSessions.set(socket.id, {
+      process: pythonProcess,
+      language: 'python',
+      tempFiles: [tempFile],
+      isRunning: true,
+      lastOutput: '',
+      inputExpected: false
+    });
+
+    socket.emit('execution-output', { output: 'Executing Python...\n' });
+    setupProcessHandlers(pythonProcess, socket, [tempFile]);
+    resolve();
+  });
+}
+
+// C Execution - FIXED VERSION with automatic input detection
+function executeC(code, socket, sessionId, tempDir) {
+  return new Promise((resolve) => {
+    const sourceFile = path.join(tempDir, `${sessionId}.c`);
+    const executable = path.join(tempDir, `${sessionId}${process.platform === 'win32' ? '.exe' : ''}`);
+    
+    console.log(`🔧 Compiling C: ${sourceFile} -> ${executable}`);
+    
+    // Write the C code to file
+    fs.writeFileSync(sourceFile, code);
+
+    // Compile C code with basic flags
+    const compileArgs = [sourceFile, '-o', executable];
+    
+    const compileProcess = spawn('gcc', compileArgs, {
+      timeout: 15000,
+      cwd: tempDir
+    });
+
+    let compileOutput = '';
+    let compileError = '';
+
+    compileProcess.stdout.on('data', (data) => {
+      compileOutput += data.toString();
+    });
+
+    compileProcess.stderr.on('data', (data) => {
+      compileError += data.toString();
+    });
+
+    compileProcess.on('close', (exitCode) => {
+      console.log(`🔧 C compilation exited with code: ${exitCode}`);
+      
+      if (exitCode !== 0) {
+        console.error(`❌ C Compilation failed: ${compileError}`);
+        socket.emit('execution-result', {
+          success: false,
+          error: `C Compilation failed:\n${compileError || 'Unknown compilation error'}`
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      // Check if executable was created
+      if (!fs.existsSync(executable)) {
+        console.error(`❌ Executable not found: ${executable}`);
+        socket.emit('execution-result', {
+          success: false,
+          error: 'C Compilation failed: Executable was not created.'
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      console.log(`✅ C executable created: ${executable}`);
+
+      // Make executable executable (Unix-like systems)
+      if (process.platform !== 'win32') {
+        try {
+          fs.chmodSync(executable, 0o755);
+        } catch (e) {
+          console.log('⚠️ Could not set executable permissions:', e.message);
+        }
+      }
+
+      // Execute compiled C program with proper input handling
+      const cProcess = spawn(executable, [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 30000,
+        cwd: tempDir
+      });
+
+      executionSessions.set(socket.id, {
+        process: cProcess,
+        language: 'c',
+        tempFiles: [sourceFile, executable],
+        isRunning: true,
+        lastOutput: '',
+        inputExpected: false
+      });
+
+      socket.emit('execution-output', { output: 'Executing C...\n' });
+      
+      // Enhanced process handlers for C
+      setupProcessHandlersForC(cProcess, socket, [sourceFile, executable]);
+      resolve();
+    });
+
+    compileProcess.on('error', (err) => {
+      console.error('❌ C Compiler spawn error:', err);
+      socket.emit('execution-result', {
+        success: false,
+        error: `C Compiler error: ${err.message}\nMake sure GCC is installed and available in PATH.`
+      });
+      cleanupFiles([sourceFile]);
+      resolve();
+    });
+  });
+}
+
+// C++ Execution
+function executeCpp(code, socket, sessionId, tempDir) {
+  return new Promise((resolve) => {
+    const sourceFile = path.join(tempDir, `${sessionId}.cpp`);
+    const executable = path.join(tempDir, `${sessionId}${process.platform === 'win32' ? '.exe' : ''}`);
+    
+    console.log(`🔧 Compiling C++: ${sourceFile} -> ${executable}`);
+    
+    fs.writeFileSync(sourceFile, code);
+
+    // Compile C++ code
+    const compileArgs = [sourceFile, '-o', executable];
+    
+    const compileProcess = spawn('g++', compileArgs, {
+      timeout: 15000,
+      cwd: tempDir
+    });
+
+    let compileOutput = '';
+    let compileError = '';
+
+    compileProcess.stdout.on('data', (data) => {
+      compileOutput += data.toString();
+    });
+
+    compileProcess.stderr.on('data', (data) => {
+      compileError += data.toString();
+    });
+
+    compileProcess.on('close', (exitCode) => {
+      console.log(`🔧 C++ compilation exited with code: ${exitCode}`);
+      
+      if (exitCode !== 0) {
+        console.error(`❌ C++ Compilation failed: ${compileError}`);
+        socket.emit('execution-result', {
+          success: false,
+          error: `C++ Compilation failed:\n${compileError || 'Unknown compilation error'}`
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      // Check if executable was created
+      if (!fs.existsSync(executable)) {
+        console.error(`❌ Executable not found: ${executable}`);
+        socket.emit('execution-result', {
+          success: false,
+          error: 'C++ Compilation failed: Executable was not created.'
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      console.log(`✅ C++ executable created: ${executable}`);
+
+      // Make executable executable (Unix-like systems)
+      if (process.platform !== 'win32') {
+        try {
+          fs.chmodSync(executable, 0o755);
+        } catch (e) {
+          console.log('⚠️ Could not set executable permissions:', e.message);
+        }
+      }
+
+      // Execute compiled C++ program
+      const cppProcess = spawn(executable, [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 30000,
+        cwd: tempDir
+      });
+
+      executionSessions.set(socket.id, {
+        process: cppProcess,
+        language: 'cpp',
+        tempFiles: [sourceFile, executable],
+        isRunning: true,
+        lastOutput: '',
+        inputExpected: false
+      });
+
+      socket.emit('execution-output', { output: 'Executing C++...\n' });
+      setupProcessHandlers(cppProcess, socket, [sourceFile, executable]);
+      resolve();
+    });
+
+    compileProcess.on('error', (err) => {
+      console.error('❌ C++ Compiler spawn error:', err);
+      socket.emit('execution-result', {
+        success: false,
+        error: `C++ Compiler error: ${err.message}\nMake sure G++ is installed and available in PATH.`
+      });
+      cleanupFiles([sourceFile]);
+      resolve();
+    });
+  });
+}
+
+// Java Execution
+function executeJava(code, socket, sessionId, tempDir) {
+  return new Promise((resolve) => {
+    const sourceFile = path.join(tempDir, 'Main.java');
+    
+    fs.writeFileSync(sourceFile, code);
+
+    // Compile Java code
+    const compileProcess = spawn('javac', [sourceFile], {
+      timeout: 10000,
+      cwd: tempDir
+    });
+
+    let compileOutput = '';
+    let compileError = '';
+
+    compileProcess.stdout.on('data', (data) => {
+      compileOutput += data.toString();
+    });
+
+    compileProcess.stderr.on('data', (data) => {
+      compileError += data.toString();
+    });
+
+    compileProcess.on('close', (code) => {
+      if (code !== 0) {
+        socket.emit('execution-result', {
+          success: false,
+          error: `Java Compilation failed:\n${compileError || 'Unknown compilation error'}`
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      // Check if class file was created
+      const classFile = path.join(tempDir, 'Main.class');
+      if (!fs.existsSync(classFile)) {
+        socket.emit('execution-result', {
+          success: false,
+          error: 'Java Compilation failed: Class file was not created'
+        });
+        cleanupFiles([sourceFile]);
+        return resolve();
+      }
+
+      // Execute Java program
+      const javaProcess = spawn('java', ['-cp', tempDir, 'Main'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15000,
+        cwd: tempDir
+      });
+
+      executionSessions.set(socket.id, {
+        process: javaProcess,
+        language: 'java',
+        tempFiles: [sourceFile, classFile],
+        isRunning: true,
+        lastOutput: '',
+        inputExpected: false
+      });
+
+      socket.emit('execution-output', { output: 'Executing Java...\n' });
+      setupProcessHandlers(javaProcess, socket, [sourceFile, classFile]);
+      resolve();
+    });
+
+    compileProcess.on('error', (err) => {
+      console.error('Java Compiler spawn error:', err);
+      socket.emit('execution-result', {
+        success: false,
+        error: `Java Compiler error: ${err.message}\nMake sure Java JDK is installed and available in PATH.`
+      });
+      cleanupFiles([sourceFile]);
+      resolve();
+    });
+  });
+}
+
+// JavaScript Execution
+function executeJavaScript(code, socket, sessionId, tempDir) {
+  return new Promise((resolve) => {
+    const tempFile = path.join(tempDir, `${sessionId}.js`);
+    fs.writeFileSync(tempFile, code);
+
+    const nodeProcess = spawn('node', [tempFile], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 15000,
+      cwd: tempDir
+    });
+
+    executionSessions.set(socket.id, {
+      process: nodeProcess,
+      language: 'javascript',
+      tempFiles: [tempFile],
+      isRunning: true,
+      lastOutput: '',
+      inputExpected: false
+    });
+
+    socket.emit('execution-output', { output: 'Executing JavaScript...\n' });
+    setupProcessHandlers(nodeProcess, socket, [tempFile]);
+    resolve();
+  });
+}
+
+// Special process handler for C with automatic input detection
+function setupProcessHandlersForC(process, socket, tempFiles) {
+  let outputBuffer = '';
+  let inputTimeout = null;
+
+  // Handle stdout
+  process.stdout.on('data', (data) => {
+    const output = data.toString();
+    console.log(`📤 C Output for ${socket.id}:`, JSON.stringify(output));
+    outputBuffer += output;
+    
+    // Send output to client
+    socket.emit('execution-output', { output: output });
+    
+    // Check for input patterns in the accumulated output
+    const session = executionSessions.get(socket.id);
+    if (session) {
+      session.lastOutput = outputBuffer;
+      
+      // Enhanced input detection for C programs without fflush
+      const inputPatterns = [
+        /Enter/i,
+        /enter/i,
+        /input/i,
+        /number/i,
+        /value/i,
+        /:\s*$/,
+        />\s*$/,
+        /\?\s*$/,
+        /scanf/,
+        /waiting/i
+      ];
+      
+      const hasInputPrompt = inputPatterns.some(pattern => outputBuffer.match(pattern));
+      const endsWithPrompt = output.endsWith(':') || output.endsWith('?') || output.endsWith('>');
+      
+      if ((hasInputPrompt || endsWithPrompt) && !session.inputExpected) {
+        console.log(`🔍 C Program waiting for input detected`);
+        session.inputExpected = true;
+        
+        // Small delay to ensure the prompt is fully displayed
+        clearTimeout(inputTimeout);
+        inputTimeout = setTimeout(() => {
+          socket.emit('waiting-for-input');
+        }, 100);
+      }
+    }
+  });
+
+  // Handle stderr
+  process.stderr.on('data', (data) => {
+    const errorOutput = data.toString();
+    console.log(`❌ C Error for ${socket.id}:`, errorOutput);
+    socket.emit('execution-output', { output: errorOutput, isError: true });
+  });
+
+  // Handle process exit
+  process.on('close', (code) => {
+    console.log(`✅ C Process closed for socket ${socket.id} with exit code ${code}`);
+    clearTimeout(inputTimeout);
+    
+    // Clean up temp files
+    cleanupFiles(tempFiles);
+    
+    const success = code === 0;
+    socket.emit('execution-result', {
+      success: success,
+      output: `\n[Program ${success ? 'completed successfully' : 'finished with exit code ' + code}]`,
+      exitCode: code
+    });
+    
+    executionSessions.delete(socket.id);
+  });
+
+  // Handle process errors
+  process.on('error', (err) => {
+    console.error(`❌ C Process error for ${socket.id}:`, err);
+    clearTimeout(inputTimeout);
+    
+    // Clean up temp files
+    cleanupFiles(tempFiles);
+
+    socket.emit('execution-result', {
+      success: false,
+      error: `Execution error: ${err.message}`
+    });
+    
+    executionSessions.delete(socket.id);
+  });
+}
+
+// Common process handler setup
+function setupProcessHandlers(process, socket, tempFiles) {
+  let outputBuffer = '';
+  let inputTimeout = null;
+
+  // Handle stdout
+  process.stdout.on('data', (data) => {
+    const output = data.toString();
+    console.log(`📤 Output for ${socket.id}:`, JSON.stringify(output));
+    outputBuffer += output;
+    
+    socket.emit('execution-output', { output: output });
+    
+    const session = executionSessions.get(socket.id);
+    if (session) {
+      session.lastOutput = outputBuffer;
+      
+      // Universal input detection
+      const inputPatterns = [
+        /Enter/i,
+        /enter/i,
+        /input/i,
+        /number/i,
+        /value/i,
+        /:\s*$/,
+        />\s*$/,
+        /\?\s*$/,
+        /scanf/,
+        /cin\s*>>/,
+        /readline/,
+        /prompt/i,
+        /waiting/i
+      ];
+      
+      const hasInputPrompt = inputPatterns.some(pattern => outputBuffer.match(pattern));
+      const endsWithPrompt = output.endsWith(':') || output.endsWith('?') || output.endsWith('>');
+      
+      if ((hasInputPrompt || endsWithPrompt) && !session.inputExpected) {
+        console.log(`🔍 Program waiting for input detected (${session.language})`);
+        session.inputExpected = true;
+        
+        clearTimeout(inputTimeout);
+        inputTimeout = setTimeout(() => {
+          socket.emit('waiting-for-input');
+        }, 150);
+      }
+    }
+  });
+
+  // Handle stderr
+  process.stderr.on('data', (data) => {
+    const errorOutput = data.toString();
+    console.log(`❌ Error for ${socket.id}:`, errorOutput);
+    socket.emit('execution-output', { output: errorOutput, isError: true });
+  });
+
+  // Handle process exit
+  process.on('close', (code) => {
+    console.log(`✅ Process closed for socket ${socket.id} with exit code ${code}`);
+    clearTimeout(inputTimeout);
+    
+    cleanupFiles(tempFiles);
+    
+    const success = code === 0;
+    socket.emit('execution-result', {
+      success: success,
+      output: `\n[Program ${success ? 'completed successfully' : 'finished with exit code ' + code}]`,
+      exitCode: code
+    });
+    
+    executionSessions.delete(socket.id);
+  });
+
+  process.on('error', (err) => {
+    console.error(`❌ Process error for ${socket.id}:`, err);
+    clearTimeout(inputTimeout);
+    
+    cleanupFiles(tempFiles);
+
+    let errorMessage = `Execution error: ${err.message}`;
+    if (err.code === 'ENOENT') {
+      const lang = executionSessions.get(socket.id)?.language || 'program';
+      errorMessage = `${lang.charAt(0).toUpperCase() + lang.slice(1)} compiler is not installed or not in PATH.`;
+    }
+
+    socket.emit('execution-result', {
+      success: false,
+      error: errorMessage
+    });
+    
+    executionSessions.delete(socket.id);
+  });
+}
+
+// ===================================================================
+// --- NEW EXPORT: Single Test Execution (Non-interactive) ---
+// This is used by the Problem Controller for Run All/Submit.
+// ===================================================================
+/**
+ * Executes code non-interactively for a single test case.
+ * This is a simplified wrapper for controllers to use for test runs.
+ * @param {string} language - Code language.
+ * @param {string} code - Code content.
+ * @param {string} input - The standard input for the test case.
+ * @returns {Promise<{stdout: string, stderr: string, exitCode: number}>}
+ */
+async function runCodeTest(language, code, input) {
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const sessionId = `test_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  let sourceFile, executable, runCommand, runArgs, tempFiles = [];
+
+  try {
+    const cleanedCode = code.replace(/^-\s+/gm, '');
+
+    switch (language.toLowerCase()) {
+      case 'python':
+        sourceFile = path.join(tempDir, `${sessionId}.py`);
+        fs.writeFileSync(sourceFile, cleanedCode);
+        runCommand = 'python';
+        runArgs = [sourceFile];
+        tempFiles.push(sourceFile);
+        break;
+      
+      case 'c':
+      case 'cpp': {
+        const ext = language.toLowerCase() === 'c' ? '.c' : '.cpp';
+        const compiler = language.toLowerCase() === 'c' ? 'gcc' : 'g++';
+        sourceFile = path.join(tempDir, `${sessionId}${ext}`);
+        executable = path.join(tempDir, `${sessionId}${process.platform === 'win32' ? '.exe' : ''}`);
+        
+        fs.writeFileSync(sourceFile, cleanedCode);
+        
+        // Compilation
+        const compileProcess = spawn(compiler, [sourceFile, '-o', executable], { timeout: 15000, cwd: tempDir });
+        let compileError = '';
+        
+        compileProcess.stderr.on('data', (data) => {
+          compileError += data.toString();
+        });
+
+        await new Promise((resolve, reject) => {
+          compileProcess.on('error', (err) => reject(new Error(`${compiler} not found. ${err.message}`)));
+          compileProcess.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(compileError || `Compilation failed with exit code ${code}`));
+            } else {
+              resolve();
+            }
+          });
+        });
+
+        runCommand = executable;
+        runArgs = [];
+        tempFiles.push(sourceFile, executable);
+        break;
+      }
+      
+      case 'java': {
+        sourceFile = path.join(tempDir, 'Main.java');
+        const className = 'Main';
+        const classFile = path.join(tempDir, 'Main.class');
+
+        fs.writeFileSync(sourceFile, cleanedCode);
+
+        // Compilation
+        const compileProcess = spawn('javac', [sourceFile], { timeout: 10000, cwd: tempDir });
+        let compileError = '';
+
+        compileProcess.stderr.on('data', (data) => {
+          compileError += data.toString();
+        });
+
+        await new Promise((resolve, reject) => {
+            compileProcess.on('error', (err) => reject(new Error(`javac not found. ${err.message}`)));
+            compileProcess.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(compileError || `Compilation failed with exit code ${code}`));
+                } else if (!fs.existsSync(classFile)) {
+                    reject(new Error('Compilation failed: Class file was not created'));
+                } else {
+                    resolve();
+                }
+            });
+        });
+        
+        runCommand = 'java';
+        runArgs = ['-cp', tempDir, className];
+        tempFiles.push(sourceFile, classFile);
+        break;
+      }
+      
+      case 'javascript':
+        sourceFile = path.join(tempDir, `${sessionId}.js`);
+        fs.writeFileSync(sourceFile, cleanedCode);
+        runCommand = 'node';
+        runArgs = [sourceFile];
+        tempFiles.push(sourceFile);
+        break;
+      
+      default:
+        throw new Error(`Unsupported language: ${language}`);
+    }
+
+    // Execution
+    const process = spawn(runCommand, runArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 30000,
+      cwd: tempDir
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+
+    // Send input if provided
+    if (input) {
+      process.stdin.write(input);
+      process.stdin.end();
+    }
+    
+    process.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    process.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    const result = await new Promise((resolve) => {
+      process.on('close', (code) => {
+        resolve({ stdout, stderr, exitCode: code });
+      });
+      process.on('error', (err) => {
+          stderr += `Execution error: ${err.message}`;
+          resolve({ stdout: '', stderr, exitCode: 1 });
+      });
+      process.on('timeout', () => {
+        timedOut = true;
+        process.kill();
+        stderr += 'Execution timed out.';
+        resolve({ stdout: '', stderr, exitCode: 1 });
+      });
+    });
+    
+    if (timedOut) {
+        result.stderr = 'Execution timed out. Try to optimize your solution.';
+        result.exitCode = 1;
+    }
+
+    // CRITICAL: Throw an error if compilation or execution failed to be caught by problemController
+    if (result.exitCode !== 0 && result.stderr) {
+        throw new Error(result.stderr);
+    }
+    
+    return result;
+
+  } catch (error) {
+    console.error(`Error during single test run for ${language}:`, error.message);
+    // Return a structured error object for the controller to handle
+    return { stdout: '', stderr: error.message, exitCode: 1 };
+  } finally {
+    // Cleanup temporary files
+    cleanupFiles(tempFiles);
+  }
+}
+
+// --- Static File Serving (for production) ---
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  });
+}
+
+// --- Enhanced 404 Handler ---
+app.use('*', (req, res) => {
+  console.log(`❌ Route not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    success: false,
+    msg: 'Route not found',
+    method: req.method,
+    path: req.originalUrl,
+  });
+});
+
+// --- Global Error Handler ---
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', err.stack);
+  res.status(500).json({ 
+    success: false,
+    msg: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
+
+// --- Server Startup ---
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 CORS enabled for: ${process.env.CORS_ORIGIN || 'http://localhost:5173'}`);
+  console.log('🐍 Real-time Python compiler running locally');
+  console.log('⚡ Real-time C compiler running locally');
+  console.log('🔥 Real-time C++ compiler running locally');
+  console.log('☕ Real-time Java compiler running locally');
+  console.log('📜 Real-time JavaScript compiler running locally');
+  console.log('💡 Make sure compilers are installed on your system!');
+  console.log('✅ Stats routes registered: /api/stats/user-stats');
 });
+
+// FIX: Export runCodeTest so problemController can use it.
+module.exports = { app, server, io, runCodeTest };
