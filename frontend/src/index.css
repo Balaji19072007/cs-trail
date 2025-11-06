@@ -1,0 +1,963 @@
+/* src/index.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================ */
+/* CRITICAL STRUCTURAL FIX: Global Margins/Padding */
+/* ============================================ */
+
+
+html,
+body,
+#root {
+  opacity: 1 !important;
+  visibility: visible !important;
+  margin: 0 !important; 
+  padding: 0 !important;
+  width: 100%;
+  min-height: 100vh; /* Use vh to ensure full viewport height */
+  max-width: none !important; /* CRITICAL: Remove max-width constraint */
+}
+
+/* Ensure base colors are visible */
+html,
+body {
+  background-color: var(--color-background-dark) !important;
+  color: var(--color-text-main) !important;
+}
+
+/* Override any invisible text classes */
+* {
+  opacity: 1;
+  visibility: visible;
+}
+
+
+/* ============================================ */
+/* PROFESSIONAL THEME REFINEMENTS */
+/* ============================================ */
+
+/* Base Variables for Color Management */
+:root {
+    --color-primary-500: #00a79d; 
+    --color-primary-600: #008e7b; 
+    --color-primary-400: #1ee0d0; 
+    --color-primary-100: #e0f2f2; 
+
+    --color-background-dark: #101827; 
+    --color-background-dark-light: #1c273a; 
+    --color-background-dark-accent: #29384c; 
+    --color-background-card: #1c273a; /* Main Card background in dark mode */
+    --color-background-card-hover: #29384c; 
+    
+    /* FIX: Set bg-gray-800 (used for problem cards) to a distinctly lighter gray in dark mode */
+    --color-background-problem-card: #1f2937; /* Darker than background-card for contrast */
+
+    --color-text-main: #e2e8f0; 
+    --color-text-secondary: #a0aec0; 
+
+    --color-border-dark: #374151; 
+    --color-border-dark-hover: var(--color-primary-500); 
+    --color-shadow-dark: rgba(0, 0, 0, 0.4);
+}
+
+/* --- LIGHT MODE OVERRIDES: Global Class Overrides --- */
+body.light-theme {
+    --color-background-dark: #ffffff;
+    --color-background-dark-light: #f3f4f6; /* Light gray for backgrounds (e.g., stats bar, filter buttons) */
+    --color-background-dark-accent: #e5e7eb; /* Slightly darker light gray (e.g., filter box, inputs) */
+    --color-background-card: #ffffff;
+    --color-background-card-hover: #f9fafb; 
+    
+    --color-background-problem-card: #ffffff; /* White in light mode */
+    
+    --color-text-main: #1f2937; 
+    --color-text-secondary: #4b5563; 
+    
+    --color-primary-500: #059669; 
+    --color-primary-600: #047857;
+    --color-primary-400: #10b981;
+    --color-primary-100: #d1fae5;
+    
+    --color-border-dark: #d1d5db; 
+    --color-border-dark-hover: var(--color-primary-500);
+    --color-shadow-dark: rgba(0, 0, 0, 0.15);
+
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+}
+
+/* Tailwind Customizations using CSS Variables for Dynamic Theme Switching */
+@layer base {
+    .text-white { color: var(--color-text-main) !important; }
+    .text-gray-900, .text-gray-800, .text-gray-700 { color: var(--color-text-main) !important; }
+    .text-gray-600, .text-gray-500 { color: var(--color-text-secondary) !important; }
+    .text-gray-400, .text-gray-300 { color: var(--color-text-secondary) !important; }
+
+    .bg-gray-50, body { background-color: var(--color-background-dark); }
+    .bg-gray-100 { background-color: var(--color-background-dark-light); }
+    .bg-white { background-color: var(--color-background-card); } 
+    /* FIX: Explicitly map bg-gray-800 to the dark problem card background */
+    .bg-gray-800 { background-color: var(--color-background-problem-card); } 
+    .bg-gray-900 { background-color: var(--color-background-card); } 
+    
+    .bg-gray-700 { background-color: var(--color-background-dark-accent); }
+
+    .bg-primary-500 { background-color: var(--color-primary-500); }
+    .bg-primary-600 { background-color: var(--color-primary-600); }
+    .bg-primary-400 { color: var(--color-primary-400); } 
+
+    .text-primary-500 { color: var(--color-primary-500); }
+    .text-primary-400 { color: var(--color-primary-400); }
+    .text-primary-100 { color: var(--color-primary-100); }
+    
+    .border-gray-100, .border-gray-200, .border-gray-300, .border-gray-700 { border-color: var(--color-border-dark); }
+}
+
+/* --- THEMED BACKGROUNDS --- */
+.gradient-bg {
+    min-height: 50vh; 
+    position: relative;
+    overflow: hidden;
+    background: var(--color-background-dark); 
+    border-bottom: 1px solid var(--color-border-dark);
+}
+/* FIX 1: Hero Section Background */
+body.light-theme .gradient-bg {
+    background: var(--color-background-card) !important; /* Forces white for the hero */
+    border-bottom-color: var(--color-border-dark);
+}
+
+
+.dark-gradient {
+    background: var(--color-background-dark-light); 
+}
+
+body.light-theme .dark-gradient {
+    background: var(--color-background-dark);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); 
+}
+
+.dark-gradient-secondary {
+    background: var(--color-background-dark);
+}
+/* FIX 2: Stats Bar Background */
+body.light-theme .dark-gradient-secondary {
+    background: var(--color-background-dark-light) !important; /* Forces light gray for the stats bar */
+    border-bottom-color: var(--color-border-dark) !important;
+}
+
+/* --- FIX 2: Theme-aware classes for Notification Rows (Retained) --- */
+.notification-row-bg {
+    background-color: var(--color-background-dark-light); /* Dark mode base: dark gray */
+    transition: background-color 0.2s;
+}
+.notification-row-bg:hover {
+    background-color: var(--color-background-dark-accent); /* Dark mode hover: darker gray */
+}
+body.light-theme .notification-row-bg {
+    background-color: #f8fafc; /* Light mode base: very light gray */
+}
+body.light-theme .notification-row-bg:hover {
+    background-color: #f3f4f6; /* Light mode hover: light gray */
+}
+
+
+/* --- COMPONENT STYLES --- */
+.card-hover { 
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid var(--color-border-dark);
+    /* FIX: Use the specific problem card background color */
+    background: var(--color-background-problem-card);
+    border-radius: 0.75rem; 
+}
+
+.card-hover:hover {
+    border-color: var(--color-border-dark-hover); 
+    background: var(--color-background-card-hover);
+    transform: translateY(-2px); 
+    box-shadow: 0 10px 15px -3px var(--color-shadow-dark); 
+}
+
+.dark-glass {
+    background: var(--color-background-dark-accent); 
+    border: 1px solid var(--color-border-dark);
+    border-radius: 0.75rem;
+}
+
+/* Primary Button (Retained) */
+.btn-primary {
+    background: var(--color-primary-500);
+    color: white !important;
+    border: 1px solid var(--color-primary-500);
+    transition: all 0.3s;
+    border-radius: 0.5rem; 
+}
+.btn-primary:hover {
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+}
+
+.dark-btn {
+    @apply btn-primary;
+}
+
+.light-btn-primary {
+    background: var(--color-primary-500);
+    color: white !important;
+    border: 1px solid var(--color-primary-500);
+    transition: all 0.3s;
+    border-radius: 0.5rem;
+}
+.light-btn-primary:hover {
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+}
+
+.dark-btn-secondary {
+    background: transparent;
+    color: var(--color-primary-400) !important;
+    border: 1px solid var(--color-border-dark);
+    transition: all 0.3s;
+    border-radius: 0.5rem;
+}
+.dark-btn-secondary:hover {
+    background: var(--color-background-dark-accent);
+    color: var(--color-text-main) !important;
+    border-color: var(--color-primary-500);
+}
+
+.light-btn-secondary {
+    background: transparent;
+    color: var(--color-primary-500) !important;
+    border: 1px solid var(--color-border-dark);
+    transition: all 0.3s;
+    border-radius: 0.5rem;
+}
+body.light-theme .light-btn-secondary {
+    background: var(--color-primary-500);
+    color: white !important;
+    border: 1px solid var(--color-primary-500);
+}
+body.light-theme .light-btn-secondary:hover {
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+}
+
+/* Nav Link Active/Hover (Retained) */
+.nav-link.active-nav {
+    color: var(--color-primary-400) !important;
+    border-bottom: 2px solid var(--color-primary-500); 
+}
+
+.nav-link:hover:not(.active-nav) {
+    color: var(--color-text-main) !important;
+}
+
+/* Input/Form Styles (Retained) */
+.form-input {
+    background-color: var(--color-background-dark-accent);
+    border: 1px solid var(--color-border-dark);
+    color: var(--color-text-main);
+}
+
+/* Global Base Styles (Retained) */
+body {
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    background-color: var(--color-background-dark);
+    color: var(--color-text-main);
+    scroll-behavior: smooth;
+    opacity: 1 !important; 
+    transition: opacity 0.5s ease-in-out; 
+}
+
+/* Animation Removal (Retained) */
+.text-glow-animation, .animate-float, .animate-pulse-fade {
+    animation: none !important;
+}
+
+/* FIX: Profile Dropdown Styling (Retained) */
+.profile-dropdown {
+    background-color: var(--color-background-card); 
+    border: 1px solid var(--color-border-dark);
+    box-shadow: 0 10px 20px var(--color-shadow-dark);
+    color: var(--color-text-main); 
+}
+
+.profile-dropdown .bg-gray-800\/50 {
+    background-color: var(--color-background-dark-accent);
+}
+
+.profile-dropdown .text-white { 
+    color: var(--color-text-main) !important;
+}
+
+.profile-dropdown .text-gray-400 {
+    color: var(--color-text-secondary) !important;
+}
+
+/* FIX: Dropdown Hover Item Styling (Retained) */
+.profile-dropdown a.hover\:bg-gray-700:hover, 
+.profile-dropdown button.hover\:bg-gray-700:hover { 
+    background-color: var(--color-background-dark-accent);
+    color: var(--color-text-main) !important; 
+}
+
+/* Special styling for sign out button in dropdown (Retained) */
+.profile-dropdown .text-red-400 {
+    color: #f87171 !important; /* Tailwind red-400 for consistency */
+}
+.profile-dropdown .hover\:bg-red-500\/20:hover { 
+    background-color: rgba(239, 68, 68, 0.2); /* Red-500/20 */
+    color: #f87171 !important; /* Keep a readable red color */
+}
+
+.search-container input {
+    background-color: var(--color-background-dark-accent); 
+    border-color: var(--color-border-dark);
+    color: var(--color-text-main);
+}
+
+.card-hover h3,
+.card-hover p:not(.text-gray-500) { /* Target headings and primary text inside cards */
+    color: var(--color-text-main) !important;
+}
+body.light-theme .card-hover h3,
+body.light-theme .card-hover p:not(.text-gray-500) {
+    color: var(--color-text-main) !important; /* Will resolve to #1f2937 (dark text) in light mode */
+}
+
+/* ============================================ */
+/* ROADMAP-SPECIFIC FIXES */
+/* ============================================ */
+
+/* Fix for SimpleRoadmapCard backgrounds (Retained) */
+.simple-roadmap-card {
+    background-color: var(--color-background-card);
+    border-color: var(--color-border-dark);
+}
+
+body.light-theme .simple-roadmap-card {
+    background-color: var(--color-background-card);
+    border-color: var(--color-border-dark);
+}
+
+/* CRITICAL FIX 1: The inner expanded area background for SimpleRoadmapCard and FeaturedRoadmapsGrid */
+/* This targets the inner div with bg-gray-100/50, ensuring it resolves to a bright color in light mode */
+body.light-theme .bg-gray-100\/50 {
+    /* Use white or a very light gray to ensure it looks light */
+    background-color: #f9fafb !important; 
+}
+
+/* CRITICAL FIX 3: Target the outer container of the expanded content when in light theme */
+/* This ensures anything using bg-gray-800 or bg-gray-900 is white in light theme */
+body.light-theme .bg-gray-900,
+body.light-theme .bg-gray-800 {
+    /* This overrides the base resolution to ensure it's white in the light theme */
+    background-color: var(--color-background-card) !important; 
+}
+
+
+/* Target all text elements (title, description, etc.) inside the list items in light mode (Retained) */
+body.light-theme .space-y-3 h4,
+body.light-theme .space-y-3 p,
+body.light-theme .space-y-3 span {
+    color: var(--color-text-main) !important; /* Forces dark text in light mode */
+}
+/* Re-fix for text color in the course list header, which is text-gray-700 in Roadmaps.jsx (Retained) */
+body.light-theme .text-gray-700 {
+    color: var(--color-text-main) !important;
+}
+
+/* Ensure the background of the individual course item is white in light mode (Retained) */
+body.light-theme .space-y-3 > div {
+    background-color: white !important;
+    border-color: #d1d5db;
+}
+
+/* CRITICAL FIX 2: Ensure the estimated time tag background and text are correct in light mode */
+body.light-theme .text-gray-600.bg-gray-200 {
+    /* Force background color to a light gray */
+    background-color: var(--color-background-dark-accent) !important; 
+    /* Force text color to dark text secondary */
+    color: var(--color-text-secondary) !important; 
+}
+
+/* Fix for roadmap content areas (Retained) */
+.roadmap-content {
+    background-color: var(--color-background-card);
+}
+
+body.light-theme .roadmap-content {
+    background-color: var(--color-background-card);
+}
+
+/* Fix for career job tags in light mode (Retained) */
+body.light-theme .career-job-tag {
+    background-color: #f3f4f6;
+    color: #374151;
+    border-color: #d1d5db;
+}
+
+/* Ensure text visibility in both modes (Retained) */
+.roadmap-title {
+    color: var(--color-text-main) !important;
+}
+
+.roadmap-description {
+    color: var(--color-text-secondary) !important;
+}
+
+/* Button fixes for roadmaps (Retained) */
+.roadmap-button-primary {
+    background: var(--color-primary-500);
+    color: white !important;
+    border: 1px solid var(--color-primary-500);
+}
+
+.roadmap-button-primary:hover {
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+}
+
+.roadmap-button-secondary {
+    background: transparent;
+    color: var(--color-primary-400) !important;
+    border: 1px solid var(--color-border-dark);
+}
+
+body.light-theme .roadmap-button-secondary {
+    background: var(--color-primary-500);
+    color: white !important;
+    border: 1px solid var(--color-primary-500);
+}
+
+body.light-theme .roadmap-button-secondary:hover {
+    background: var(--color-primary-600);
+    border-color: var(--color-primary-600);
+}
+
+/* FIX 2: Explicitly style the final CTA button when logged in, in light mode (Retained) */
+.cta-white-btn-light {
+    background-color: white !important;
+    color: #1f2937 !important; /* Dark text */
+    border: 1px solid #d1d5db;
+}
+
+.cta-white-btn-light:hover {
+    background-color: #f3f4f6 !important;
+    color: #1f2937 !important;
+}
+
+
+.dark-tag-style {
+    background-color: var(--color-background-dark-light); /* Tag background */
+    color: var(--color-text-secondary); /* Tag text color */
+    border: 1px solid var(--color-border-dark);
+}
+body.light-theme .dark-tag-style {
+    background-color: var(--color-background-dark-accent); /* Light gray for light mode */
+    color: var(--color-text-secondary); /* Dark text for light mode */
+    border-color: var(--color-border-dark);
+}
+
+.dark-filter-default-style {
+    background-color: var(--color-background-dark-accent); /* Filter button background */
+    color: var(--color-text-secondary); /* Filter button text */
+}
+.dark-filter-default-style:hover {
+    background-color: var(--color-background-card-hover);
+    color: var(--color-text-main);
+}
+body.light-theme .dark-filter-default-style {
+    background-color: var(--color-background-dark-light); /* Very light gray for light mode */
+    color: var(--color-text-secondary);
+}
+body.light-theme .dark-filter-default-style:hover {
+    background-color: var(--color-background-dark-accent);
+    color: var(--color-text-main);
+}
+
+/* Make sure all text in ProblemCard is theme-aware */
+.problem-card h3 {
+    color: var(--color-text-main) !important;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1s infinite;
+}
+
+/* Terminal-like font */
+.terminal-font {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Ensure proper terminal text alignment */
+.terminal-output {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  line-height: 1.4;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Terminal-like font */
+.terminal-font {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Ensure proper terminal text alignment and behavior */
+.terminal-output {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  line-height: 1.4;
+  caret-color: #00ff00; /* Green cursor for terminal */
+}
+
+/* Focus styles for console when waiting for input */
+.console-waiting-input {
+  border: 2px solid #f59e0b !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+}
+
+/* Custom scrollbar for terminal */
+.terminal-output::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-output::-webkit-scrollbar-track {
+  background: var(--color-background-dark-accent);
+  border-radius: 4px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+  border-radius: 4px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-500);
+}
+
+/* Problem timer styles */
+.problem-timer {
+  font-variant-numeric: tabular-nums;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Code editor specific overrides */
+.monaco-editor {
+  border-radius: 0.5rem;
+}
+
+/* Submission status badges */
+.status-accepted {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.status-wrong-answer {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.status-pending {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+/* Loading animation for code execution */
+.execution-loading {
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
+  background-size: 200% 100%;
+  animation: loading-shimmer 2s infinite;
+}
+
+@keyframes loading-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Custom scrollbar for problem content */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-500);
+}
+
+/* Focus styles for interactive elements */
+.focus-visible-terminal:focus {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+  .terminal-output {
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+  
+  .problem-timer {
+    font-size: 0.875rem;
+  }
+}
+
+/* ============================================ */
+/* SOLVE PROBLEM PAGE SPECIFIC FIXES */
+/* ============================================ */
+
+/* Fix for example input/output boxes in light mode */
+body.light-theme .example-io pre,
+body.light-theme .bg-black {
+  background-color: #f8fafc !important;
+  color: #1f2937 !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+/* Fix for solution code block in light mode */
+body.light-theme .read-code-box pre {
+  background-color: #1f2937 !important;
+  color: #f3f4f6 !important;
+}
+
+/* Fix difficulty badges in light mode */
+body.light-theme .bg-green-600\/30 {
+  background-color: rgba(5, 150, 105, 0.2) !important;
+  color: #065f46 !important;
+}
+
+body.light-theme .bg-blue-600\/30 {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+  color: #1e40af !important;
+}
+
+body.light-theme .bg-yellow-600\/30 {
+  background-color: rgba(217, 119, 6, 0.2) !important;
+  color: #92400e !important;
+}
+
+/* Fix test case status badges in light mode */
+body.light-theme .bg-green-100 {
+  background-color: rgba(5, 150, 105, 0.2) !important;
+  color: #065f46 !important;
+}
+
+body.light-theme .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  color: #dc2626 !important;
+}
+
+body.light-theme .bg-gray-100 {
+  background-color: rgba(156, 163, 175, 0.2) !important;
+  color: #4b5563 !important;
+}
+
+/* ============================================ */
+/* CRITICAL FIX: CONSOLE VISIBILITY IN LIGHT MODE */
+/* ============================================ */
+
+/* Dark mode console styling (default) */
+.terminal-output {
+  background-color: #1f2937 !important;
+  color: #f3f4f6 !important;
+  border-color: #374151 !important;
+}
+
+/* Light mode console styling - FIXED */
+body.light-theme .terminal-output {
+  background-color: #f8fafc !important; /* Light gray background */
+  color: #1f2937 !important; /* Dark text color */
+  border-color: #e5e7eb !important; /* Light border */
+}
+
+/* Fix console text colors in light mode */
+body.light-theme .terminal-output,
+body.light-theme .terminal-output * {
+  color: #1f2937 !important; /* Ensure all text is dark in light mode */
+}
+
+/* Fix console error text in light mode */
+body.light-theme .terminal-output.text-red-400 {
+  color: #dc2626 !important; /* Red for errors in light mode */
+}
+
+/* Fix console waiting input state in light mode */
+body.light-theme .console-waiting-input {
+  border-color: #d97706 !important; /* Amber border for waiting input */
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1) !important;
+}
+
+/* Fix blinking cursor in light mode */
+body.light-theme .blink {
+  color: #1f2937 !important; /* Dark cursor in light mode */
+}
+
+/* Fix console scrollbar in light mode */
+body.light-theme .terminal-output::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+}
+
+body.light-theme .terminal-output::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+}
+
+body.light-theme .terminal-output::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
+}
+
+/* Fix card backgrounds in light mode */
+body.light-theme .bg-gray-800 {
+  background-color: #ffffff !important;
+}
+
+body.light-theme .bg-gray-900 {
+  background-color: #f9fafb !important;
+}
+
+/* Fix borders in light mode */
+body.light-theme .border-gray-700 {
+  border-color: #e5e7eb !important;
+}
+
+/* ============================================ */
+/* MOBILE RESPONSIVE FIXES FOR SOLVE PROBLEM PAGE */
+/* ============================================ */
+
+@media (max-width: 1024px) {
+  .solve-page-container {
+    padding: 0.5rem !important;
+  }
+  
+  .problem-editor-layout {
+    flex-direction: column !important;
+    gap: 1rem !important;
+  }
+  
+  .problem-description-column,
+  .code-editor-column {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+  
+  /* Stack action buttons vertically on mobile */
+  .editor-actions {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+  
+  .editor-actions button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  
+  /* Adjust tab navigation for mobile */
+  .problem-tabs {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+  
+  .problem-tabs button {
+    flex: 1 !important;
+    min-width: 120px !important;
+    text-align: center !important;
+    padding: 0.5rem 0.25rem !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* Adjust output tabs for mobile */
+  .output-tabs {
+    flex-direction: column !important;
+  }
+  
+  .output-tabs button {
+    width: 100% !important;
+    text-align: left !important;
+    padding: 0.75rem 1rem !important;
+  }
+  
+  /* Fix code editor height on mobile */
+  .code-editor-mobile {
+    height: 300px !important;
+    min-height: 300px !important;
+  }
+  
+  /* Adjust test cases layout for mobile */
+  .test-case-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+  
+  /* Make back button full width on mobile */
+  .back-button-mobile {
+    width: 100% !important;
+    justify-content: center !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Adjust problem header for mobile */
+  .problem-header-mobile {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+  }
+  
+  .problem-meta-mobile {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Further mobile optimizations */
+  .problem-content-mobile {
+    padding: 1rem !important;
+  }
+  
+  .code-editor-mobile {
+    height: 250px !important;
+  }
+  
+  .terminal-output-mobile {
+    height: 200px !important;
+    font-size: 0.75rem !important;
+  }
+  
+  /* Stack run/test buttons on very small screens */
+  .action-buttons-mobile {
+    flex-direction: column !important;
+  }
+  
+  .action-buttons-mobile button {
+    width: 100% !important;
+  }
+}
+
+/* Smooth transitions for all interactive elements */
+.solve-page-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Loading state improvements */
+.loading-state-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+}
+
+/* Error state improvements */
+.error-state-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* ============================================ */
+/* MOBILE-ONLY STYLES FOR SOLVE PROBLEM PAGE */
+/* ============================================ */
+
+@media (max-width: 1023px) {
+  /* Mobile Action Buttons - Side by Side */
+  .action-buttons-mobile {
+    flex-direction: row !important;
+    gap: 0.5rem !important;
+  }
+  
+  .action-buttons-mobile button {
+    flex: 1 !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* Mobile Button Icons Only */
+  .action-buttons-mobile button span {
+    display: none !important;
+  }
+  
+  .action-buttons-mobile button i {
+    margin-right: 0 !important;
+  }
+  
+  /* Mobile Code Editor Header */
+  .editor-actions button span.lg\\:hidden {
+    display: inline !important;
+  }
+  
+  .editor-actions button span.hidden.lg\\:inline {
+    display: none !important;
+  }
+  
+  /* Mobile-specific spacing */
+  .solve-page-container {
+    padding: 0 !important;
+  }
+  
+  .problem-editor-layout {
+    gap: 0 !important;
+  }
+  
+  /* Mobile header adjustments */
+  .lg\\:hidden .flex.items-center.justify-between {
+    padding: 1rem !important;
+  }
+  
+  /* Ensure proper mobile viewport */
+  .code-editor-mobile {
+    height: 40vh !important;
+    min-height: 40vh !important;
+  }
+  
+  .terminal-output-mobile {
+    height: 20vh !important;
+    min-height: 20vh !important;
+  }
+}
+
+/* Desktop styles remain unchanged */
+@media (min-width: 1024px) {
+  .action-buttons-mobile button span.hidden.sm\\:inline {
+    display: inline !important;
+  }
+  
+  .action-buttons-mobile button i {
+    margin-right: 0.5rem !important;
+  }
+}
+
