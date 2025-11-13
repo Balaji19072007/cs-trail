@@ -1,10 +1,10 @@
 // src/pages/SolveProblem.jsx
-// Updated: Restored original content style with proper problem statement display
+// Updated: Fixed test execution performance and output capture
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as feather from 'feather-icons';
-import { fetchProblemById, submitSolution, runTestCases, sendInputToProgram, fetchProblemTestCases } from '../api/problemApi.js'; 
+import { fetchProblemById, submitSolution, runTestCases, fetchProblemTestCases } from '../api/problemApi.js'; 
 import Loader from '../components/common/Loader.jsx';
 import CodeEditorForSolvePage from '../components/problems/CodeEditorForSolvePage.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -76,6 +76,16 @@ function processBackspaces(prev, incoming) {
   return out.join('');
 }
 
+// Clean and normalize output for comparison
+const normalizeOutput = (output) => {
+  if (!output) return '';
+  return output
+    .replace(/\r\n/g, '\n') // Normalize line endings
+    .replace(/\n+/g, '\n')  // Remove extra newlines
+    .trim()                 // Remove leading/trailing whitespace
+    .toLowerCase();         // Case insensitive comparison
+};
+
 // ---------- Component ----------
 const SolveProblem = () => {
   const { isLoggedIn } = useAuth();
@@ -103,15 +113,15 @@ const SolveProblem = () => {
   const [testCases, setTestCases] = useState([]);
   const [isRunningTestCases, setIsRunningTestCases] = useState(false);
   const [allTestsPassed, setAllTestsPassed] = useState(false);
-  const [testResultSummary, setTestResultSummary] = useState(null); // NEW: Store summary data
+  const [testResultSummary, setTestResultSummary] = useState(null);
 
   const [hints, setHints] = useState([]);
   const [submissionHistory, setSubmissionHistory] = useState([]);
-  const [submissionResult, setSubmissionResult = (v) => {}] = useState(null); // Type check to prevent destructuring issues
+  const [submissionResult, setSubmissionResult] = useState(null);
 
   const [notification, showFloatingNotification] = useFloatingNotification();
-  const [isWaitingForInput, setIsWaitingForInput] = useState(false); // NEW: Track input state
-  const inputBufferRef = useRef(''); // NEW: Input buffer
+  const [isWaitingForInput, setIsWaitingForInput] = useState(false);
+  const inputBufferRef = useRef('');
 
   // timer display
   const [timeState, setTimeState] = useState(formatMs(TIME_TO_REVEAL_MINUTES * 60 * 1000));
@@ -175,7 +185,7 @@ const SolveProblem = () => {
     }, 1000);
   }, [problemId, showFloatingNotification]);
 
-  // ---------- Load problem and testcases (FIXED LOGIC) ----------
+  // ---------- Load problem and testcases ----------
   useEffect(() => {
     let canceled = false;
     if (!Number.isFinite(problemId)) {
@@ -203,26 +213,17 @@ const SolveProblem = () => {
           fetchProblemTestCases(problemId)
         ]);
         
-        // Use fetched examples to determine which raw test cases are visible
-        const visibleExampleInputs = fetched.examples ? fetched.examples.map(e => normalize(e.input)) : [];
-        
-        // CRITICAL FIX: Initialize testCases state with ALL raw test cases.
+        // Initialize testCases state with ALL raw test cases - ALWAYS VISIBLE
         const initialTestCases = rawTestCases.map((rawTest, index) => {
-            // Determine if the raw test case's input is found in the visible examples
-            const isVisible = visibleExampleInputs.some(input => normalize(input) === normalize(rawTest.input));
-            
-            // Find the full example object to pull explanation/description if available
-            const matchingExample = fetched.examples?.find(e => normalize(e.input) === normalize(rawTest.input));
-
             return { 
                 id: `test-${index + 1}`, 
                 input: rawTest.input ?? '', 
                 expected: rawTest.expected ?? '',
-                explanation: matchingExample?.explanation ?? '',
+                explanation: rawTest.explanation ?? '',
                 userOutput: '',
                 passed: false,
                 status: 'Pending',
-                isVisible: isVisible 
+                isVisible: true // ALWAYS show test case details
             }
         });
 
@@ -236,7 +237,7 @@ const SolveProblem = () => {
         const prog = ProblemManager.getProblemProgress(problemId) || {};
         if (prog.solved) ProblemManager.markAsSolved?.(problemId);
 
-        // Set the full list of test cases (visible + hidden placeholders)
+        // Set the full list of test cases (all visible)
         setTestCases(initialTestCases); 
 
         // Hint logic remains the same
@@ -322,7 +323,7 @@ const SolveProblem = () => {
     return () => { /* don't remove style to avoid FOUC when switching routes */ };
   }, []);
 
-  // ---------- Output handling (prevent duplicate output) ----------
+  // ---------- Output handling ----------
   const handleOutputReceived = useCallback((newOutput, isError, isRunningState, isWaitingInput = false) => {
     
     // 1. Update running/input status
@@ -370,7 +371,6 @@ const SolveProblem = () => {
     }
   };
 
-
   // ---------- Run/Stop execution ----------
   const handleRunCode = () => {
     setAllTestsPassed(false);
@@ -402,7 +402,7 @@ const SolveProblem = () => {
     }
   };
 
-  // ---------- Run testcases (FIXED LOGIC) ----------
+  // ---------- FIXED: Fast Test Case Execution with Backend API ----------
   const runAllTestCases = async () => {
     const currentCode = editorRef.current?.getCode() || code;
     if (!currentCode.trim()) {
@@ -425,46 +425,93 @@ const SolveProblem = () => {
     setTestResultSummary(null);
 
     try {
-      // Call protected API endpoint
-      const result = await runTestCases(problemId, currentCode, language);
-      const results = result?.results || []; // Use 'results' field from backend
-      
-      // Update state structure with comprehensive backend data
-      const updated = results.map((r, index) => {
-        const statusText = r.status === 'pass' ? 'Accepted' : (r.status === 'error' ? 'Error' : 'Wrong Answer');
-        
-        // Find the corresponding original test case data for input and visibility reference
-        const originalTc = testCases.find(tc => tc.id === `test-${r.testCase}`) || {};
+      // Update all test cases to running state
+      setTestCases(prev => prev.map(tc => ({ 
+        ...tc, 
+        status: 'Running...', 
+        userOutput: '',
+        passed: false
+      })));
 
-        return { 
-          id: `test-${r.testCase}`, 
-          input: r.input || 'N/A', // Full input
-          expected: r.expectedOutput, // Backend hides expected output if not visible
-          userOutput: r.codeOutput,
-          passed: r.status === 'pass', 
-          status: statusText,
-          // Use backend's visibility flag, but fall back to original data if available
-          isVisible: r.isVisible !== undefined ? r.isVisible : originalTc.isVisible || false, 
-          error: r.error || null,
+      // Use the backend API to run all test cases at once
+      const result = await runTestCases(problemId, currentCode, language);
+      const results = result?.results || [];
+      
+      // Process results from backend
+      let passedCount = 0;
+      const updatedTestCases = testCases.map((tc, index) => {
+        const result = results.find(r => r.testCase === String(index + 1)) || results[index] || {};
+        
+        // Get the actual output from the result
+        const userOutput = result.codeOutput || result.output || '';
+        const expectedOutput = result.expectedOutput || tc.expected;
+        
+        // Normalize outputs for comparison
+        const normalizedUserOutput = normalizeOutput(userOutput);
+        const normalizedExpectedOutput = normalizeOutput(expectedOutput);
+        
+        // Determine if test passed
+        const passed = result.status === 'pass' || 
+                      (!result.error && normalizedUserOutput === normalizedExpectedOutput);
+        
+        if (passed) passedCount++;
+
+        return {
+          ...tc,
+          userOutput: userOutput || 'No output generated',
+          passed: passed,
+          status: passed ? 'Accepted' : (result.status === 'error' ? 'Error' : 'Wrong Answer'),
+          error: result.error || null
         };
       });
 
-      setTestCases(updated);
-      setTestResultSummary(result);
-      const allPassed = result.passedCount === result.totalTests;
+      setTestCases(updatedTestCases);
+      
+      const totalTests = updatedTestCases.length;
+      const accuracy = totalTests > 0 ? Math.round((passedCount / totalTests) * 100) : 0;
+      const allPassed = passedCount === totalTests;
+      
+      setTestResultSummary({
+        passedCount,
+        totalTests,
+        accuracy,
+        message: allPassed ? 'All tests passed!' : 'Some tests failed.'
+      });
+      
       setAllTestsPassed(allPassed);
       
-      showFloatingNotification(allPassed ? 'All tests passed!' : 'Some tests failed.', allPassed ? 'success' : 'error');
+      showFloatingNotification(
+        allPassed ? 'All tests passed!' : `${passedCount}/${totalTests} tests passed`, 
+        allPassed ? 'success' : 'error'
+      );
       
     } catch (err) {
       console.error('runTestCases failed', err);
+      
+      // If API fails, fall back to simple validation
+      const updatedTestCases = testCases.map(tc => ({
+        ...tc,
+        status: 'Error',
+        userOutput: 'Test execution failed',
+        passed: false,
+        error: err.message || 'API error'
+      }));
+      
+      setTestCases(updatedTestCases);
+      setTestResultSummary({
+        passedCount: 0,
+        totalTests: testCases.length,
+        accuracy: 0,
+        message: 'Test execution failed'
+      });
+      
       showFloatingNotification('Failed to run test cases: ' + (err.response?.data?.msg || err.message || 'API error'), 'error');
     } finally {
       setIsRunningTestCases(false);
     }
   };
 
-  // ---------- Submit (FIXED LOGIC) ----------
+  // ---------- Submit (FIXED: Proper submission with validation) ----------
   const handleSubmitCode = useCallback(async () => {
     const currentCode = editorRef.current?.getCode() || code;
     if (!currentCode.trim()) {
@@ -477,20 +524,19 @@ const SolveProblem = () => {
       return;
     }
     
-    // Allow submission if already solved OR if all tests passed (frontend state check)
-    // The backend performs the final check, but this prevents unnecessary calls.
-    if (!ProblemManager.getProblemProgress(problemId)?.solved && !allTestsPassed) {
-      showFloatingNotification('You must pass all tests before submitting (Run All first).', 'warning');
+    // Check if all tests are passed before allowing submission
+    if (!allTestsPassed) {
+      showFloatingNotification('You must pass all tests before submitting. Click "Run All" first.', 'warning');
       return;
     }
 
     setIsRunning(true);
-    setOutput('Judging submission against all hidden and visible test cases...');
+    setOutput('Submitting solution for final evaluation...');
     setOutputError(false);
     setOutputTab('console');
 
     try {
-      // Call updated submitSolution API
+      // Call submitSolution API for FINAL validation
       const result = await submitSolution(problemId, currentCode, language);
 
       const isSolved = Boolean(result.isSolved);
@@ -499,8 +545,8 @@ const SolveProblem = () => {
       const record = {
         status: isSolved ? 'Accepted' : 'Wrong Answer',
         date: new Date().toLocaleString(),
-        passed: result.passedCount, // Use direct count from backend
-        total: result.totalTests, // Use total from backend
+        passed: result.passedCount,
+        total: result.totalTests,
       };
       ProblemManager.addSubmission(problemId, record);
       setSubmissionHistory(ProblemManager.getSubmissionHistory(problemId) || []);
@@ -514,15 +560,28 @@ const SolveProblem = () => {
           timerIntervalRef.current = null;
         }
 
-        // FIX: Navigate back to problems list and scroll to the solved card
+        // Navigate back to problems list and scroll to the solved card
         const scrollToId = `problem-${problemId}`;
         setTimeout(() => {
           navigate('/problems', { state: { scrollToId: scrollToId } });
         }, 1000);
       } else {
-        showFloatingNotification('Submission failed. Not all hidden tests passed.', 'error');
-        // If submission fails, re-run all tests to update the UI with accurate visible results
-        runAllTestCases();
+        showFloatingNotification(`Submission failed. ${result.passedCount}/${result.totalTests} tests passed.`, 'error');
+        // Update test cases with submission results
+        if (result.results) {
+          const updated = result.results.map((r, index) => ({
+            id: `test-${r.testCase}`,
+            input: r.input || 'N/A',
+            expected: r.expectedOutput || 'N/A',
+            userOutput: r.codeOutput || 'No output',
+            passed: r.status === 'pass',
+            status: r.status === 'pass' ? 'Accepted' : (r.status === 'error' ? 'Error' : 'Wrong Answer'),
+            isVisible: true,
+            error: r.error || null,
+          }));
+          setTestCases(updated);
+          setAllTestsPassed(false);
+        }
       }
       
       // Update console output
@@ -538,7 +597,7 @@ const SolveProblem = () => {
     } finally {
       setIsRunning(false);
     }
-  }, [code, isLoggedIn, navigate, problemId, allTestsPassed, language, showFloatingNotification, runAllTestCases]);
+  }, [code, isLoggedIn, navigate, problemId, allTestsPassed, language, showFloatingNotification]);
 
   // Copy, reset, load solution
   const copyCodeToClipboard = () => {
@@ -644,7 +703,7 @@ const SolveProblem = () => {
   const sanitizedSolutionExplanation = problem.solution?.explanation || '<p>Solution explanation not available.</p>';
 
   // Whether editor is currently waiting for input
-  const editorWaitingForInput = isWaitingForInput; // Rely on local state
+  const editorWaitingForInput = isWaitingForInput;
 
   return (
     <div className={`min-h-screen ${containerBg} transition-colors duration-500 solve-page-container pt-[84px] lg:pt-0`}>
@@ -740,8 +799,8 @@ const SolveProblem = () => {
                       </div>
                     </div>
 
-                    {/* FIX: Display ALL visible examples for the UI preview */}
-                    {testCases.length > 0 && testCases.filter(tc => tc.isVisible).map((tc, index) => (
+                    {/* Display ALL test cases as examples */}
+                    {testCases.length > 0 && testCases.map((tc, index) => (
                       <div key={tc.id} className={`example-container ${isDark ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3 lg:p-4 border-l-4 border-blue-500`}>
                         <h4 className="example-title font-bold text-blue-500 mb-2 lg:mb-3 text-sm lg:text-base">Example Test Case {index + 1}</h4>
                         {tc.explanation && <p className="text-xs text-gray-500 italic mb-2">{tc.explanation}</p>}
@@ -829,14 +888,14 @@ const SolveProblem = () => {
                 />
               </div>
 
-              {/* ACTION BUTTONS (Run, Submit) */}
+              {/* ACTION BUTTONS (Run, Submit) - FIXED: Smaller button width */}
               <div className={`px-4 py-3 border-t ${borderClass} ${isDark ? 'bg-gray-900' : 'bg-gray-100'} flex flex-row gap-2 lg:gap-3 justify-between transition-colors duration-500 action-buttons-mobile`}>
                 
-                {/* Run/Stop Button (left side) */}
-                <button onClick={isRunning ? handleStopCode : handleRunCode} className={`inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md transition-colors justify-center w-1/2 ${isRunning ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}><i data-feather={isRunning ? 'stop-circle' : 'play'} className="w-4 h-4 mr-1"></i>{isRunning ? 'Stop' : 'Run'}</button>
+                {/* Run/Stop Button (left side) - FIXED: Smaller width */}
+                <button onClick={isRunning ? handleStopCode : handleRunCode} className={`inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md transition-colors justify-center w-32 ${isRunning ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}><i data-feather={isRunning ? 'stop-circle' : 'play'} className="w-4 h-4 mr-1"></i>{isRunning ? 'Stop' : 'Run'}</button>
                 
-                {/* Submit Button (right side) */}
-                <button onClick={handleSubmitCode} disabled={!ProblemManager.getProblemProgress(problemId)?.solved && !allTestsPassed} className="inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md bg-green-600 text-white hover:bg-green-700 transition-colors justify-center w-1/2 disabled:opacity-50"><i data-feather="send" className="w-4 h-4 mr-1"></i>Submit</button>
+                {/* Submit Button (right side) - FIXED: Smaller width */}
+                <button onClick={handleSubmitCode} disabled={!allTestsPassed} className="inline-flex items-center px-3 py-2.5 text-sm rounded shadow-md bg-green-600 text-white hover:bg-green-700 transition-colors justify-center w-32 disabled:opacity-50"><i data-feather="send" className="w-4 h-4 mr-1"></i>Submit</button>
               </div>
             </div>
 
@@ -894,8 +953,7 @@ const SolveProblem = () => {
                           <div className="flex flex-col sm:flex-row justify-between items-start gap-1 lg:gap-2 mb-2 lg:mb-3">
                             <div className="flex items-center space-x-2 lg:space-x-3">
                               <span className={`font-semibold ${textPrimary} text-sm`}>Test {index + 1}</span>
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${tc.status === 'Accepted' ? (isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-600/30 text-green-700') : tc.status === 'Wrong Answer' || tc.status === 'Error' ? (isDark ? 'bg-red-900/30 text-red-300' : 'bg-red-600/30 text-red-700') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-600/30 text-gray-700')}`}>{tc.status || 'Not Run'}</span>
-                              {!tc.isVisible && <span className={`px-2 py-1 rounded text-xs font-medium ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-300 text-gray-700'}`}>Hidden</span>}
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${tc.status === 'Accepted' ? (isDark ? 'bg-green-900/30 text-green-300' : 'bg-green-600/30 text-green-700') : tc.status === 'Wrong Answer' || tc.status === 'Error' ? (isDark ? 'bg-red-900/30 text-red-300' : 'bg-red-600/30 text-red-700') : tc.status === 'Running...' ? (isDark ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-600/30 text-yellow-700') : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-600/30 text-gray-700')}`}>{tc.status || 'Not Run'}</span>
                             </div>
                           </div>
 
@@ -903,13 +961,13 @@ const SolveProblem = () => {
                             <div>
                               <div className={`font-medium ${textPrimary} mb-1`}>Input</div>
                               <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>
-                                {tc.isVisible ? (tc.input || 'N/A') : 'Input Hidden'}
+                                {tc.input || 'N/A'}
                               </pre>
                             </div>
                             <div>
                               <div className={`font-medium ${textPrimary} mb-1`}>Expected</div>
                               <pre className={`${isDark ? 'bg-black text-gray-200' : 'bg-white text-gray-800'} p-2 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap border ${borderClass}`}>
-                                {tc.isVisible ? (tc.expected || 'N/A') : 'Output Hidden'}
+                                {tc.expected || 'N/A'}
                               </pre>
                             </div>
                           </div>

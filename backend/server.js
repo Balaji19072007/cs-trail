@@ -13,7 +13,6 @@ const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
 const { v2: cloudinary } = require('cloudinary'); 
 const multer = require('multer');
-const statsRoutes = require('./routes/statsRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,7 +27,7 @@ const googleAuthRoutes = require('./routes/googleAuthRoutes');
 const problemRoutes = require('./routes/problemRoutes');
 const leaderboardRoutes = require('./routes/leaderboardRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
-app.use('/api/stats', statsRoutes);
+const statsRoutes = require('./routes/statsRoutes'); // Keep this import
 
 // Enable CORS for all routes
 app.use(cors({
@@ -123,7 +122,8 @@ app.use('/api/google-auth', googleAuthRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/predict', predictionRoutes);
-app.use('/api/stats', require('./routes/statsRoutes'));
+app.use('/api/stats', statsRoutes); // ✅ FIXED: Only mount once
+
 // --- Health Check Endpoint ---
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -885,8 +885,7 @@ server.listen(PORT, () => {
   console.log('☕ Real-time Java compiler running locally');
   console.log('📜 Real-time JavaScript compiler running locally');
   console.log('💡 Make sure compilers are installed on your system!');
-  console.log('✅ Stats routes registered: /api/stats/user-stats');
+  console.log('✅ Stats routes registered: /api/stats/user-stats, /api/stats/rating-status, /api/stats/rating-eligibility');
 });
-console.log('Stats routes registered: /api/stats/user-stats, /api/stats/rating-eligibility, /api/stats/submit-rating');
 
 module.exports = { app, server, io };

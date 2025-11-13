@@ -166,9 +166,11 @@ const RatingPrompt = () => {
             try {
                 const token = localStorage.getItem('token');
                 console.log('Checking rating eligibility...');
+                
                 const response = await fetch('/api/stats/rating-eligibility', {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
                 });
                 
@@ -188,6 +190,11 @@ const RatingPrompt = () => {
                             sessionStorage.setItem('hasSeenRatingPrompt', 'true');
                         }
                     }
+                } else if (response.status === 401) {
+                    console.log('Authentication failed for rating eligibility check');
+                    // Token might be invalid, clear it
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('userData');
                 }
             } catch (error) {
                 console.log('Rating eligibility check failed:', error.message);
@@ -221,6 +228,11 @@ const RatingPrompt = () => {
                 console.log('Rating submitted successfully');
                 setShowPrompt(false);
                 window.location.reload();
+            } else if (response.status === 401) {
+                console.log('Authentication failed, clearing token');
+                localStorage.removeItem('token');
+                localStorage.removeItem('userData');
+                setShowPrompt(false);
             } else {
                 console.error('Failed to submit rating');
             }

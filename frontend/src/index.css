@@ -10,7 +10,6 @@
 /* CRITICAL STRUCTURAL FIX: Global Margins/Padding */
 /* ============================================ */
 
-
 html,
 body,
 #root {
@@ -19,8 +18,8 @@ body,
   margin: 0 !important; 
   padding: 0 !important;
   width: 100%;
-  min-height: 100vh; /* Use vh to ensure full viewport height */
-  max-width: none !important; /* CRITICAL: Remove max-width constraint */
+  min-height: 100vh;
+  max-width: none !important;
 }
 
 /* Ensure base colors are visible */
@@ -36,7 +35,6 @@ body {
   visibility: visible;
 }
 
-
 /* ============================================ */
 /* PROFESSIONAL THEME REFINEMENTS */
 /* ============================================ */
@@ -51,11 +49,10 @@ body {
     --color-background-dark: #101827; 
     --color-background-dark-light: #1c273a; 
     --color-background-dark-accent: #29384c; 
-    --color-background-card: #1c273a; /* Main Card background in dark mode */
+    --color-background-card: #1c273a;
     --color-background-card-hover: #29384c; 
-    
-    /* FIX: Set bg-gray-800 (used for problem cards) to a distinctly lighter gray in dark mode */
-    --color-background-problem-card: #1f2937; /* Darker than background-card for contrast */
+    --color-background-problem-card: #1f2937;
+    --color-background-navbar: #101827; /* NEW: Navbar specific variable */
 
     --color-text-main: #e2e8f0; 
     --color-text-secondary: #a0aec0; 
@@ -68,12 +65,12 @@ body {
 /* --- LIGHT MODE OVERRIDES: Global Class Overrides --- */
 body.light-theme {
     --color-background-dark: #ffffff;
-    --color-background-dark-light: #f3f4f6; /* Light gray for backgrounds (e.g., stats bar, filter buttons) */
-    --color-background-dark-accent: #e5e7eb; /* Slightly darker light gray (e.g., filter box, inputs) */
+    --color-background-dark-light: #f3f4f6;
+    --color-background-dark-accent: #e5e7eb;
     --color-background-card: #ffffff;
     --color-background-card-hover: #f9fafb; 
-    
-    --color-background-problem-card: #ffffff; /* White in light mode */
+    --color-background-problem-card: #ffffff;
+    --color-background-navbar: #ffffff; /* NEW: Light navbar */
     
     --color-text-main: #1f2937; 
     --color-text-secondary: #4b5563; 
@@ -90,7 +87,44 @@ body.light-theme {
     background-color: #ffffff !important;
     color: #1f2937 !important;
 }
+/* ============================================ */
+/* DEFAULT LIGHT THEME SETTINGS */
+/* ============================================ */
 
+/* Set light theme as default before any JS runs */
+body:not(.dark-theme):not(.light-theme) {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+/* Ensure light theme is properly applied when no theme class is present */
+html:not(.dark-theme):not(.light-theme) body {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+/* Remove any default dark theme settings that might be interfering */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ============================================ */
+/* PREVENT THEME FLASH */
+/* ============================================ */
+
+/* Hide content until theme is loaded */
+body:not(.light-theme):not(.dark-theme) {
+  visibility: hidden;
+}
+
+body.light-theme, body.dark-theme {
+  visibility: visible;
+}
+
+/* Ensure smooth transitions */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
 /* Tailwind Customizations using CSS Variables for Dynamic Theme Switching */
 @layer base {
     .text-white { color: var(--color-text-main) !important; }
@@ -101,11 +135,17 @@ body.light-theme {
     .bg-gray-50, body { background-color: var(--color-background-dark); }
     .bg-gray-100 { background-color: var(--color-background-dark-light); }
     .bg-white { background-color: var(--color-background-card); } 
-    /* FIX: Explicitly map bg-gray-800 to the dark problem card background */
     .bg-gray-800 { background-color: var(--color-background-problem-card); } 
     .bg-gray-900 { background-color: var(--color-background-card); } 
-    
     .bg-gray-700 { background-color: var(--color-background-dark-accent); }
+
+    /* CRITICAL NAVBAR FIX */
+    .bg-gray-900, .bg-gray-800, .bg-gray-700, 
+    .bg-dark, .bg-gray-800, .navbar-dark,
+    nav.bg-gray-900, nav.bg-gray-800, nav.bg-gray-700,
+    header.bg-gray-900, header.bg-gray-800, header.bg-gray-700 {
+        background-color: var(--color-background-navbar) !important;
+    }
 
     .bg-primary-500 { background-color: var(--color-primary-500); }
     .bg-primary-600 { background-color: var(--color-primary-600); }
@@ -118,6 +158,39 @@ body.light-theme {
     .border-gray-100, .border-gray-200, .border-gray-300, .border-gray-700 { border-color: var(--color-border-dark); }
 }
 
+/* --- NAVBAR SPECIFIC FIXES --- */
+.navbar-container,
+nav,
+header,
+[class*="navbar"],
+[class*="header"] {
+    background-color: var(--color-background-navbar) !important;
+    border-bottom: 1px solid var(--color-border-dark) !important;
+    transition: all 0.3s ease-in-out;
+}
+
+/* Ensure navbar text colors are theme-aware */
+.navbar-container *,
+nav *,
+header * {
+    color: var(--color-text-main) !important;
+}
+
+/* Navbar link hover states */
+.nav-link {
+    color: var(--color-text-secondary) !important;
+    transition: color 0.2s ease-in-out;
+}
+
+.nav-link:hover {
+    color: var(--color-text-main) !important;
+}
+
+.nav-link.active-nav {
+    color: var(--color-primary-400) !important;
+    border-bottom: 2px solid var(--color-primary-500); 
+}
+
 /* --- THEMED BACKGROUNDS --- */
 .gradient-bg {
     min-height: 50vh; 
@@ -126,12 +199,12 @@ body.light-theme {
     background: var(--color-background-dark); 
     border-bottom: 1px solid var(--color-border-dark);
 }
+
 /* FIX 1: Hero Section Background */
 body.light-theme .gradient-bg {
-    background: var(--color-background-card) !important; /* Forces white for the hero */
+    background: var(--color-background-card) !important;
     border-bottom-color: var(--color-border-dark);
 }
-
 
 .dark-gradient {
     background: var(--color-background-dark-light); 
@@ -145,33 +218,35 @@ body.light-theme .dark-gradient {
 .dark-gradient-secondary {
     background: var(--color-background-dark);
 }
+
 /* FIX 2: Stats Bar Background */
 body.light-theme .dark-gradient-secondary {
-    background: var(--color-background-dark-light) !important; /* Forces light gray for the stats bar */
+    background: var(--color-background-dark-light) !important;
     border-bottom-color: var(--color-border-dark) !important;
 }
 
-/* --- FIX 2: Theme-aware classes for Notification Rows (Retained) --- */
+/* --- FIX 2: Theme-aware classes for Notification Rows --- */
 .notification-row-bg {
-    background-color: var(--color-background-dark-light); /* Dark mode base: dark gray */
+    background-color: var(--color-background-dark-light);
     transition: background-color 0.2s;
 }
+
 .notification-row-bg:hover {
-    background-color: var(--color-background-dark-accent); /* Dark mode hover: darker gray */
-}
-body.light-theme .notification-row-bg {
-    background-color: #f8fafc; /* Light mode base: very light gray */
-}
-body.light-theme .notification-row-bg:hover {
-    background-color: #f3f4f6; /* Light mode hover: light gray */
+    background-color: var(--color-background-dark-accent);
 }
 
+body.light-theme .notification-row-bg {
+    background-color: #f8fafc;
+}
+
+body.light-theme .notification-row-bg:hover {
+    background-color: #f3f4f6;
+}
 
 /* --- COMPONENT STYLES --- */
 .card-hover { 
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: 1px solid var(--color-border-dark);
-    /* FIX: Use the specific problem card background color */
     background: var(--color-background-problem-card);
     border-radius: 0.75rem; 
 }
@@ -189,7 +264,7 @@ body.light-theme .notification-row-bg:hover {
     border-radius: 0.75rem;
 }
 
-/* Primary Button (Retained) */
+/* Primary Button */
 .btn-primary {
     background: var(--color-primary-500);
     color: white !important;
@@ -197,6 +272,7 @@ body.light-theme .notification-row-bg:hover {
     transition: all 0.3s;
     border-radius: 0.5rem; 
 }
+
 .btn-primary:hover {
     background: var(--color-primary-600);
     border-color: var(--color-primary-600);
@@ -214,10 +290,11 @@ body.light-theme .notification-row-bg:hover {
     transition: all 0.3s;
     border-radius: 0.5rem;
 }
+
 .light-btn-primary:hover {
     background: var(--color-primary-600);
     border-color: var(--color-primary-600);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 }
 
 .dark-btn-secondary {
@@ -227,6 +304,7 @@ body.light-theme .notification-row-bg:hover {
     transition: all 0.3s;
     border-radius: 0.5rem;
 }
+
 .dark-btn-secondary:hover {
     background: var(--color-background-dark-accent);
     color: var(--color-text-main) !important;
@@ -240,34 +318,26 @@ body.light-theme .notification-row-bg:hover {
     transition: all 0.3s;
     border-radius: 0.5rem;
 }
+
 body.light-theme .light-btn-secondary {
     background: var(--color-primary-500);
     color: white !important;
     border: 1px solid var(--color-primary-500);
 }
+
 body.light-theme .light-btn-secondary:hover {
     background: var(--color-primary-600);
     border-color: var(--color-primary-600);
 }
 
-/* Nav Link Active/Hover (Retained) */
-.nav-link.active-nav {
-    color: var(--color-primary-400) !important;
-    border-bottom: 2px solid var(--color-primary-500); 
-}
-
-.nav-link:hover:not(.active-nav) {
-    color: var(--color-text-main) !important;
-}
-
-/* Input/Form Styles (Retained) */
+/* Input/Form Styles */
 .form-input {
     background-color: var(--color-background-dark-accent);
     border: 1px solid var(--color-border-dark);
     color: var(--color-text-main);
 }
 
-/* Global Base Styles (Retained) */
+/* Global Base Styles */
 body {
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
@@ -278,12 +348,12 @@ body {
     transition: opacity 0.5s ease-in-out; 
 }
 
-/* Animation Removal (Retained) */
+/* Animation Removal */
 .text-glow-animation, .animate-float, .animate-pulse-fade {
     animation: none !important;
 }
 
-/* FIX: Profile Dropdown Styling (Retained) */
+/* FIX: Profile Dropdown Styling */
 .profile-dropdown {
     background-color: var(--color-background-card); 
     border: 1px solid var(--color-border-dark);
@@ -303,20 +373,21 @@ body {
     color: var(--color-text-secondary) !important;
 }
 
-/* FIX: Dropdown Hover Item Styling (Retained) */
+/* FIX: Dropdown Hover Item Styling */
 .profile-dropdown a.hover\:bg-gray-700:hover, 
 .profile-dropdown button.hover\:bg-gray-700:hover { 
     background-color: var(--color-background-dark-accent);
     color: var(--color-text-main) !important; 
 }
 
-/* Special styling for sign out button in dropdown (Retained) */
+/* Special styling for sign out button in dropdown */
 .profile-dropdown .text-red-400 {
-    color: #f87171 !important; /* Tailwind red-400 for consistency */
+    color: #f87171 !important;
 }
+
 .profile-dropdown .hover\:bg-red-500\/20:hover { 
-    background-color: rgba(239, 68, 68, 0.2); /* Red-500/20 */
-    color: #f87171 !important; /* Keep a readable red color */
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #f87171 !important;
 }
 
 .search-container input {
@@ -326,19 +397,20 @@ body {
 }
 
 .card-hover h3,
-.card-hover p:not(.text-gray-500) { /* Target headings and primary text inside cards */
+.card-hover p:not(.text-gray-500) {
     color: var(--color-text-main) !important;
 }
+
 body.light-theme .card-hover h3,
 body.light-theme .card-hover p:not(.text-gray-500) {
-    color: var(--color-text-main) !important; /* Will resolve to #1f2937 (dark text) in light mode */
+    color: var(--color-text-main) !important;
 }
 
 /* ============================================ */
 /* ROADMAP-SPECIFIC FIXES */
 /* ============================================ */
 
-/* Fix for SimpleRoadmapCard backgrounds (Retained) */
+/* Fix for SimpleRoadmapCard backgrounds */
 .simple-roadmap-card {
     background-color: var(--color-background-card);
     border-color: var(--color-border-dark);
@@ -350,33 +422,29 @@ body.light-theme .simple-roadmap-card {
 }
 
 /* CRITICAL FIX 1: The inner expanded area background for SimpleRoadmapCard and FeaturedRoadmapsGrid */
-/* This targets the inner div with bg-gray-100/50, ensuring it resolves to a bright color in light mode */
 body.light-theme .bg-gray-100\/50 {
-    /* Use white or a very light gray to ensure it looks light */
     background-color: #f9fafb !important; 
 }
 
 /* CRITICAL FIX 3: Target the outer container of the expanded content when in light theme */
-/* This ensures anything using bg-gray-800 or bg-gray-900 is white in light theme */
 body.light-theme .bg-gray-900,
 body.light-theme .bg-gray-800 {
-    /* This overrides the base resolution to ensure it's white in the light theme */
     background-color: var(--color-background-card) !important; 
 }
 
-
-/* Target all text elements (title, description, etc.) inside the list items in light mode (Retained) */
+/* Target all text elements inside the list items in light mode */
 body.light-theme .space-y-3 h4,
 body.light-theme .space-y-3 p,
 body.light-theme .space-y-3 span {
-    color: var(--color-text-main) !important; /* Forces dark text in light mode */
+    color: var(--color-text-main) !important;
 }
-/* Re-fix for text color in the course list header, which is text-gray-700 in Roadmaps.jsx (Retained) */
+
+/* Re-fix for text color in the course list header */
 body.light-theme .text-gray-700 {
     color: var(--color-text-main) !important;
 }
 
-/* Ensure the background of the individual course item is white in light mode (Retained) */
+/* Ensure the background of the individual course item is white in light mode */
 body.light-theme .space-y-3 > div {
     background-color: white !important;
     border-color: #d1d5db;
@@ -384,13 +452,11 @@ body.light-theme .space-y-3 > div {
 
 /* CRITICAL FIX 2: Ensure the estimated time tag background and text are correct in light mode */
 body.light-theme .text-gray-600.bg-gray-200 {
-    /* Force background color to a light gray */
     background-color: var(--color-background-dark-accent) !important; 
-    /* Force text color to dark text secondary */
     color: var(--color-text-secondary) !important; 
 }
 
-/* Fix for roadmap content areas (Retained) */
+/* Fix for roadmap content areas */
 .roadmap-content {
     background-color: var(--color-background-card);
 }
@@ -399,14 +465,14 @@ body.light-theme .roadmap-content {
     background-color: var(--color-background-card);
 }
 
-/* Fix for career job tags in light mode (Retained) */
+/* Fix for career job tags in light mode */
 body.light-theme .career-job-tag {
     background-color: #f3f4f6;
     color: #374151;
     border-color: #d1d5db;
 }
 
-/* Ensure text visibility in both modes (Retained) */
+/* Ensure text visibility in both modes */
 .roadmap-title {
     color: var(--color-text-main) !important;
 }
@@ -415,7 +481,7 @@ body.light-theme .career-job-tag {
     color: var(--color-text-secondary) !important;
 }
 
-/* Button fixes for roadmaps (Retained) */
+/* Button fixes for roadmaps */
 .roadmap-button-primary {
     background: var(--color-primary-500);
     color: white !important;
@@ -444,10 +510,10 @@ body.light-theme .roadmap-button-secondary:hover {
     border-color: var(--color-primary-600);
 }
 
-/* FIX 2: Explicitly style the final CTA button when logged in, in light mode (Retained) */
+/* FIX 2: Explicitly style the final CTA button when logged in, in light mode */
 .cta-white-btn-light {
     background-color: white !important;
-    color: #1f2937 !important; /* Dark text */
+    color: #1f2937 !important;
     border: 1px solid #d1d5db;
 }
 
@@ -456,30 +522,33 @@ body.light-theme .roadmap-button-secondary:hover {
     color: #1f2937 !important;
 }
 
-
 .dark-tag-style {
-    background-color: var(--color-background-dark-light); /* Tag background */
-    color: var(--color-text-secondary); /* Tag text color */
+    background-color: var(--color-background-dark-light);
+    color: var(--color-text-secondary);
     border: 1px solid var(--color-border-dark);
 }
+
 body.light-theme .dark-tag-style {
-    background-color: var(--color-background-dark-accent); /* Light gray for light mode */
-    color: var(--color-text-secondary); /* Dark text for light mode */
+    background-color: var(--color-background-dark-accent);
+    color: var(--color-text-secondary);
     border-color: var(--color-border-dark);
 }
 
 .dark-filter-default-style {
-    background-color: var(--color-background-dark-accent); /* Filter button background */
-    color: var(--color-text-secondary); /* Filter button text */
+    background-color: var(--color-background-dark-accent);
+    color: var(--color-text-secondary);
 }
+
 .dark-filter-default-style:hover {
     background-color: var(--color-background-card-hover);
     color: var(--color-text-main);
 }
+
 body.light-theme .dark-filter-default-style {
-    background-color: var(--color-background-dark-light); /* Very light gray for light mode */
+    background-color: var(--color-background-dark-light);
     color: var(--color-text-secondary);
 }
+
 body.light-theme .dark-filter-default-style:hover {
     background-color: var(--color-background-dark-accent);
     color: var(--color-text-main);
@@ -532,7 +601,7 @@ body.light-theme .dark-filter-default-style:hover {
   word-wrap: break-word;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   line-height: 1.4;
-  caret-color: #00ff00; /* Green cursor for terminal */
+  caret-color: #00ff00;
 }
 
 /* Focus styles for console when waiting for input */
@@ -635,13 +704,10 @@ body.light-theme .dark-filter-default-style:hover {
 
 /* Fixes for mobile layout */
 @media (max-width: 640px) {
-    /* Adjust spacing for mobile bottom navigation bar */
-    /* Assumes bottom nav is 4rem (h-16) tall */
     main {
-        padding-bottom: 4rem !important; /* Ensure content is above the bottom nav */
+        padding-bottom: 4rem !important;
     }
 }
-
 
 /* ============================================ */
 /* SOLVE PROBLEM PAGE SPECIFIC FIXES */
@@ -706,31 +772,31 @@ body.light-theme .bg-gray-100 {
 
 /* Light mode console styling - FIXED */
 body.light-theme .terminal-output {
-  background-color: #f8fafc !important; /* Light gray background */
-  color: #1f2937 !important; /* Dark text color */
-  border-color: #e5e7eb !important; /* Light border */
+  background-color: #f8fafc !important;
+  color: #1f2937 !important;
+  border-color: #e5e7eb !important;
 }
 
 /* Fix console text colors in light mode */
 body.light-theme .terminal-output,
 body.light-theme .terminal-output * {
-  color: #1f2937 !important; /* Ensure all text is dark in light mode */
+  color: #1f2937 !important;
 }
 
 /* Fix console error text in light mode */
 body.light-theme .terminal-output.text-red-400 {
-  color: #dc2626 !important; /* Red for errors in light mode */
+  color: #dc2626 !important;
 }
 
 /* Fix console waiting input state in light mode */
 body.light-theme .console-waiting-input {
-  border-color: #d97706 !important; /* Amber border for waiting input */
+  border-color: #d97706 !important;
   box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1) !important;
 }
 
 /* Fix blinking cursor in light mode */
 body.light-theme .blink {
-  color: #1f2937 !important; /* Dark cursor in light mode */
+  color: #1f2937 !important;
 }
 
 /* Fix console scrollbar in light mode */
@@ -871,12 +937,32 @@ body.light-theme .border-gray-700 {
   .action-buttons-mobile button {
     width: 100% !important;
   }
-  
-  /* Make all text small on mobile */
-  .text-xs { font-size: 0.65rem !important; }
-  .text-sm { font-size: 0.8rem !important; }
-  .text-base { font-size: 0.9rem !important; }
-  .text-lg { font-size: 1rem !important; }
+}
+
+/* Smooth transitions for all interactive elements */
+.solve-page-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Loading state improvements */
+.loading-state-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+}
+
+/* Error state improvements */
+.error-state-mobile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+  padding: 2rem;
 }
 
 /* ============================================ */
@@ -951,4 +1037,95 @@ body.light-theme .border-gray-700 {
   }
 }
 
+/* frontend/src/index.css */
 
+/* Dark Theme Styles */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: #111827 !important;
+  color: #f9fafb !important;
+}
+
+.dark .min-h-screen {
+  background-color: #111827 !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: #111827 !important;
+}
+
+.dark .bg-white {
+  background-color: #1f2937 !important;
+}
+
+.dark .text-gray-900 {
+  color: #f9fafb !important;
+}
+
+.dark .text-gray-800 {
+  color: #f9fafb !important;
+}
+
+.dark .text-gray-700 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-gray-600 {
+  color: #d1d5db !important;
+}
+
+.dark .text-gray-500 {
+  color: #9ca3af !important;
+}
+
+.dark .border-gray-300 {
+  border-color: #374151 !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #374151 !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: #1f2937 !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: #374151 !important;
+}
+
+/* Roadmap specific dark styles */
+.dark .bg-green-50 {
+  background-color: rgba(6, 78, 59, 0.3) !important;
+}
+
+.dark .bg-primary-50 {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+
+.dark .hover\:bg-gray-50:hover {
+  background-color: #1f2937 !important;
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px) scale(1); opacity: 1; }
+  50% { transform: translateY(-20px) scale(1.1); opacity: 0.8; }
+  100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+}
+
+@keyframes lineFill {
+  0% { height: 0%; }
+  100% { height: 100%; }
+}
+
+.animate-float {
+  animation: float 1.5s ease-in-out forwards;
+}
+
+.animate-lineFill {
+  animation: lineFill 2s ease-in-out forwards;
+}

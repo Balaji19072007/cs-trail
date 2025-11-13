@@ -9,8 +9,10 @@ const SignIn = () => {
   const { login, isLoggedIn } = useAuth();
   const navigate = useNavigate();
   const googleButtonRef = useRef(null);
+  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
 
   // Redirect if already logged in
+  
   useEffect(() => {
     if (isLoggedIn) {
       navigate('/');
@@ -123,10 +125,22 @@ const SignIn = () => {
     }
   };
 
+  // Improved Google Sign-In initialization
   useEffect(() => {
     const initializeGoogleSignIn = () => {
-      if (window.google && window.google.accounts && API_CONFIG.GOOGLE_CLIENT_ID) {
+      console.log('Initializing Google Sign-In...');
+      
+      // Check if required configuration is available
+      if (!API_CONFIG.GOOGLE_CLIENT_ID) {
+        console.error('Google Client ID is not configured');
+        showMessage('error', 'Google Sign-In is not properly configured. Please contact support.');
+        return;
+      }
+
+      if (window.google && window.google.accounts) {
         try {
+          console.log('Google API loaded, initializing...');
+          
           window.google.accounts.id.initialize({
             client_id: API_CONFIG.GOOGLE_CLIENT_ID,
             callback: handleGoogleCallback,
@@ -135,6 +149,7 @@ const SignIn = () => {
           });
           
           if (googleButtonRef.current) {
+            console.log('Rendering Google button...');
             window.google.accounts.id.renderButton(
               googleButtonRef.current,
               {
@@ -144,39 +159,101 @@ const SignIn = () => {
                 text: 'continue_with',
                 shape: 'rectangular',
                 logo_alignment: 'left',
-                // UPDATED: Changed width from '400' to '300' for better mobile view
-                width: '300' 
+                width: '300'
               }
             );
+            console.log('Google button rendered successfully');
           }
         } catch (error) {
           console.error('Error initializing Google Sign-In:', error);
+          showMessage('error', 'Failed to initialize Google Sign-In. Please try again.');
         }
+      } else {
+        console.error('Google accounts API not available');
       }
     };
 
-    if (window.google) {
-      initializeGoogleSignIn();
-    } else {
+    // Load Google Sign-In script if not already loaded
+    if (!window.google) {
+      console.log('Loading Google Sign-In script...');
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
-      script.onload = initializeGoogleSignIn;
+      script.onload = () => {
+        console.log('Google Sign-In script loaded successfully');
+        setGoogleScriptLoaded(true);
+        setTimeout(initializeGoogleSignIn, 100); // Small delay to ensure everything is ready
+      };
+      script.onerror = () => {
+        console.error('Failed to load Google Sign-In script');
+        showMessage('error', 'Failed to load Google Sign-In. Please check your connection.');
+      };
       document.head.appendChild(script);
+    } else {
+      console.log('Google API already loaded, initializing directly...');
+      initializeGoogleSignIn();
     }
 
     return () => {
       if (window.google && window.google.accounts) {
-        window.google.accounts.id.cancel();
+        try {
+          window.google.accounts.id.cancel();
+        } catch (error) {
+          console.warn('Error cleaning up Google Sign-In:', error);
+        }
       }
     };
   }, []);
 
+  // Re-initialize when script loads
+  useEffect(() => {
+    if (googleScriptLoaded && window.google) {
+      const timer = setTimeout(() => {
+        initializeGoogleSignIn();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [googleScriptLoaded]);
+
+  const initializeGoogleSignIn = () => {
+    if (!API_CONFIG.GOOGLE_CLIENT_ID) {
+      console.error('Google Client ID is not configured');
+      return;
+    }
+
+    if (window.google && window.google.accounts) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: API_CONFIG.GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallback,
+          context: 'signin',
+          ux_mode: 'popup',
+        });
+        
+        if (googleButtonRef.current) {
+          window.google.accounts.id.renderButton(
+            googleButtonRef.current,
+            {
+              type: 'standard',
+              theme: 'outline',
+              size: 'large',
+              text: 'continue_with',
+              shape: 'rectangular',
+              logo_alignment: 'left',
+              width: '300'
+            }
+          );
+        }
+      } catch (error) {
+        console.error('Error initializing Google Sign-In:', error);
+      }
+    }
+  };
+
   // --- Component Render ---
 
   return (
-    // FIX: Removed hardcoded bg classes and used theme-aware dark-gradient-secondary
     <div className="min-h-screen dark-gradient-secondary flex items-center justify-center p-4 py-12">
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         
@@ -187,7 +264,6 @@ const SignIn = () => {
                     <div className="h-12 w-12 bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg">
                         <i data-feather="code" className="text-white text-xl"></i>
                     </div>
-                    {/* FIX: Use nav-user-text for visibility across themes */}
                     <span className="ml-3 text-3xl font-bold nav-user-text">CS Studio</span>
                 </div>
                 
@@ -242,7 +318,6 @@ const SignIn = () => {
                     <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-md">
                         <i data-feather="code" className="text-white"></i>
                     </div>
-                    {/* FIX: Use nav-user-text for visibility across themes */}
                     <span className="ml-2 text-xl font-bold nav-user-text">CS Studio</span>
                 </Link>
             </div>
@@ -349,6 +424,15 @@ const SignIn = () => {
                 <div className="w-full flex justify-center">
                   <div ref={googleButtonRef}></div>
                 </div>
+
+                {/* Fallback message if Google Sign-In fails */}
+                {!API_CONFIG.GOOGLE_CLIENT_ID && (
+                  <div className="text-center mt-4 p-3 bg-yellow-500/20 border border-yellow-500 rounded-lg">
+                    <p className="text-yellow-200 text-sm">
+                      Google Sign-In is currently unavailable. Please use email sign-in.
+                    </p>
+                  </div>
+                )}
 
                 {/* Sign Up Link */}
                 <div className="mt-6 text-center">

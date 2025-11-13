@@ -1,4 +1,3 @@
-// models/Rating.js
 const mongoose = require('mongoose');
 
 const ratingSchema = new mongoose.Schema({
@@ -14,6 +13,10 @@ const ratingSchema = new mongoose.Schema({
     min: 1,
     max: 5
   },
+  feedback: {
+    type: String,
+    maxlength: 500
+  },
   timestamp: {
     type: Date,
     default: Date.now
@@ -25,4 +28,4 @@ const ratingSchema = new mongoose.Schema({
 ratingSchema.index({ userId: 1 });
 ratingSchema.index({ timestamp: 1 });
 
-module.exports = mongoose.model('Rating', ratingSchema);
+module.exports = mongoose.model('Rating', ratingSchema);  

@@ -10,6 +10,7 @@ import SearchBar from '../components/common/SearchBar.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 
 
+
 // ---------- Constants ----------
 const FILTER_OPTIONS = {
     difficulty: ['All', 'Easy', 'Medium', 'Hard'],

@@ -33,6 +33,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers['x-auth-token'] = token;
     }
+    
+    // Log request for debugging (remove in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`, config.data);
+    }
+    
     return config;
   },
   (error) => {
@@ -43,9 +49,18 @@ api.interceptors.request.use(
 // Response interceptor to handle token refresh
 api.interceptors.response.use(
   (response) => {
+    // Log response for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`API Response: ${response.status} ${response.config.url}`, response.data);
+    }
     return response;
   },
   async (error) => {
+    // Enhanced error logging
+    if (process.env.NODE_ENV === 'development') {
+      console.error('API Error:', error.response?.data || error.message);
+    }
+
     const originalRequest = error.config;
 
     // If error is 401 and we haven't already tried to refresh
@@ -93,9 +108,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         // Refresh failed - clear tokens and redirect to login
         processQueue(refreshError, null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('userData');
+        clearAuthData();
         
         // Redirect to login page if we're not already there
         if (!window.location.pathname.includes('/signin')) {
@@ -112,6 +125,40 @@ api.interceptors.response.use(
   }
 );
 
+// Utility function to clear auth data
+export const clearAuthData = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('userData');
+};
+
+// Utility function to check auth status
+export const isAuthenticated = () => {
+  const token = localStorage.getItem('token');
+  const refreshToken = localStorage.getItem('refreshToken');
+  return !!(token && refreshToken);
+};
+
+// Utility function to set auth tokens
+export const setAuthTokens = (token, refreshToken, userData = null) => {
+  localStorage.setItem('token', token);
+  localStorage.setItem('refreshToken', refreshToken);
+  if (userData) {
+    localStorage.setItem('userData', JSON.stringify(userData));
+  }
+};
+
+// Utility function to get stored user data
+export const getUserData = () => {
+  try {
+    const userData = localStorage.getItem('userData');
+    return userData ? JSON.parse(userData) : null;
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+    return null;
+  }
+};
+
 // API methods
 export const apiService = {
   // Public stats
@@ -124,7 +171,29 @@ export const apiService = {
   get: (url, config = {}) => api.get(url, config),
   post: (url, data, config = {}) => api.post(url, data, config),
   put: (url, data, config = {}) => api.put(url, data, config),
+  patch: (url, data, config = {}) => api.patch(url, data, config),
   delete: (url, config = {}) => api.delete(url, config),
+  
+  // Upload method for file uploads
+  upload: (url, formData, onUploadProgress = null, config = {}) => 
+    api.post(url, formData, {
+      ...config,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...config.headers,
+      },
+      onUploadProgress,
+    }),
+  
+  // Download method for file downloads
+  download: (url, config = {}) => 
+    api.get(url, {
+      ...config,
+      responseType: 'blob',
+    }),
 };
+
+// Export axios instance for direct use if needed
+export { api };
 
 export default api;

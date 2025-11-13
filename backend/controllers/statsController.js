@@ -1,16 +1,10 @@
-// controllers/statsController.js
 const User = require('../models/User');
 const Rating = require('../models/Rating');
 
 exports.getUserStats = async (req, res) => {
   try {
-    console.log('📊 Fetching user stats...');
-    
-    // Get total user count
     const totalUsers = await User.countDocuments();
-    console.log('Total users found:', totalUsers);
     
-    // Get average satisfaction rating
     let ratingStats = [];
     try {
       ratingStats = await Rating.aggregate([
@@ -23,7 +17,7 @@ exports.getUserStats = async (req, res) => {
         }
       ]);
     } catch (ratingError) {
-      console.log('No ratings found:', ratingError.message);
+      console.log('No ratings found');
     }
 
     let satisfactionRate = 96;
@@ -46,8 +40,115 @@ exports.getUserStats = async (req, res) => {
   }
 };
 
+exports.checkRatingStatus = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, msg: 'User not found' });
+    }
+
+    const existingRating = await Rating.findOne({ userId });
+    if (existingRating) {
+      return res.json({ 
+        success: true,
+        showRating: false,
+        reason: 'already_rated'
+      });
+    }
+
+    if (user.ratingShown) {
+      return res.json({
+        success: true,
+        showRating: false,
+        reason: 'already_shown'
+      });
+    }
+
+    const oneHour = 60 * 60 * 1000; // 1 hour
+    
+    let accumulatedTime = user.accumulatedUsageTime || 0;
+
+    if (user.usageStartTime) {
+      const currentSessionTime = Date.now() - new Date(user.usageStartTime).getTime();
+      accumulatedTime += currentSessionTime;
+    }
+
+    const showRating = accumulatedTime >= oneHour && !user.ratingShown;
+
+    res.json({ 
+      success: true,
+      showRating,
+      accumulatedTime,
+      timeRequired: oneHour,
+      timeRemaining: Math.max(0, oneHour - accumulatedTime)
+    });
+  } catch (err) {
+    console.error('Check rating status error:', err.message);
+    res.status(500).json({ success: false, msg: 'Server error while checking rating status' });
+  }
+};
+
+exports.startUsageTracking = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, msg: 'User not found' });
+    }
+
+    const existingRating = await Rating.findOne({ userId });
+    if (existingRating || user.ratingShown) {
+      return res.json({ success: true, tracking: false, reason: 'already_rated' });
+    }
+
+    if (!user.usageStartTime) {
+      await User.findByIdAndUpdate(userId, {
+        usageStartTime: new Date(),
+        lastActivityTime: new Date()
+      });
+    } else {
+      await User.findByIdAndUpdate(userId, {
+        lastActivityTime: new Date()
+      });
+    }
+
+    res.json({ success: true, tracking: true });
+  } catch (err) {
+    console.error('Start usage tracking error:', err.message);
+    res.status(500).json({ success: false, msg: 'Server error while starting usage tracking' });
+  }
+};
+
+exports.stopUsageTracking = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user || !user.usageStartTime) {
+      return res.json({ success: true, tracking: false });
+    }
+
+    const sessionTime = Date.now() - new Date(user.usageStartTime).getTime();
+    const newAccumulatedTime = (user.accumulatedUsageTime || 0) + sessionTime;
+
+    await User.findByIdAndUpdate(userId, {
+      accumulatedUsageTime: newAccumulatedTime,
+      usageStartTime: null,
+      lastActivityTime: new Date()
+    });
+
+    res.json({ success: true, sessionTime, accumulatedTime: newAccumulatedTime });
+  } catch (err) {
+    console.error('Stop usage tracking error:', err.message);
+    res.status(500).json({ success: false, msg: 'Server error while stopping usage tracking' });
+  }
+};
+
 exports.submitRating = async (req, res) => {
-  const { rating } = req.body;
+  const { rating, feedback } = req.body;
   const userId = req.user.id;
 
   try {
@@ -63,49 +164,40 @@ exports.submitRating = async (req, res) => {
     const newRating = new Rating({
       userId,
       rating,
+      feedback: feedback || '',
       timestamp: new Date()
     });
 
     await newRating.save();
-    console.log('New rating saved:', { userId, rating });
+    
+    await User.findByIdAndUpdate(userId, {
+      ratingShown: true,
+      ratingEligible: false
+    });
 
     res.json({ 
+      success: true,
       msg: 'Thank you for your feedback!',
-      rating 
+      rating,
+      feedback: feedback || ''
     });
   } catch (err) {
     console.error('Submit rating error:', err.message);
-    res.status(500).json({ msg: 'Server error while submitting rating' });
+    res.status(500).json({ success: false, msg: 'Server error while submitting rating' });
   }
 };
 
-exports.checkRatingEligibility = async (req, res) => {
+exports.markRatingShown = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const existingRating = await Rating.findOne({ userId });
-    if (existingRating) {
-      return res.json({ eligible: false, reason: 'already_rated' });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ msg: 'User not found' });
-    }
-
-    const accountCreationTime = user.createdAt || user.dateCreated;
-    const accountAge = Date.now() - accountCreationTime.getTime();
-    const twoHours = 2 * 60 * 60 * 1000;
-
-    const eligible = accountAge >= twoHours;
-
-    res.json({ 
-      eligible,
-      accountCreated: accountCreationTime,
-      timeUntilEligible: eligible ? 0 : twoHours - accountAge
+    await User.findByIdAndUpdate(userId, {
+      ratingShown: true
     });
+
+    res.json({ success: true, message: 'Rating marked as shown' });
   } catch (err) {
-    console.error('Check rating eligibility error:', err.message);
-    res.status(500).json({ msg: 'Server error while checking rating eligibility' });
+    console.error('Mark rating shown error:', err.message);
+    res.status(500).json({ success: false, msg: 'Server error while marking rating as shown' });
   }
 };

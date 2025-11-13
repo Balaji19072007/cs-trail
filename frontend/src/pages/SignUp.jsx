@@ -9,6 +9,7 @@ const SignUp = () => {
   const { login, isLoggedIn } = useAuth();
   const navigate = useNavigate();
   const googleButtonRef = useRef(null);
+  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -30,15 +31,44 @@ const SignUp = () => {
   // OTP State - Step 2
   const [step, setStep] = useState(1); // 1 = Registration, 2 = OTP Verification
   const [otpCode, setOtpCode] = useState(new Array(6).fill(''));
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpExpiry, setOtpExpiry] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [canResend, setCanResend] = useState(false);
 
   // UI State
   const [message, setMessage] = useState({ type: null, text: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Timer for OTP expiry
+  useEffect(() => {
+    let timer;
+    if (otpExpiry && timeLeft > 0) {
+      timer = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setCanResend(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpExpiry, timeLeft]);
+
+  // Reset step when component mounts or when going back
+  useEffect(() => {
+    // Always start at step 1 when component loads
+    setStep(1);
+    setOtpSent(false);
+  }, []);
+
   useEffect(() => {
     feather.replace();
-  }, [message, showPassword, loading, step]);
+  }, [message, showPassword, loading, step, timeLeft]);
 
   // --- Utility Functions ---
 
@@ -47,6 +77,12 @@ const SignUp = () => {
     if (type === 'success') {
       setTimeout(() => setMessage({ type: null, text: '' }), 5000);
     }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
   const handleChange = (e) => {
@@ -90,20 +126,39 @@ const SignUp = () => {
       const otpResponse = await fetch(API_ENDPOINTS.AUTH.SEND_OTP, {
         method: 'POST',
         headers: getHeaders(false),
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ 
+          email,
+          firstName,
+          lastName 
+        }),
       });
 
       const otpData = await otpResponse.json();
 
       if (otpResponse.ok) {
-        showMessage('success', 'OTP sent to your email!');
-        setStep(2); 
+        showMessage('success', `OTP sent to your email! It will expire in 2 minutes.`);
+        setOtpSent(true);
+        setStep(2); // Only move to step 2 when OTP is successfully sent
+        // Set OTP expiry timer (2 minutes)
+        setOtpExpiry(Date.now() + 2 * 60 * 1000);
+        setTimeLeft(2 * 60); // 2 minutes in seconds
+        setCanResend(false);
+        
+        // For development: show OTP in console
+        if (otpData.debugOtp) {
+          console.log('Development OTP:', otpData.debugOtp);
+        }
       } else {
         showMessage('error', otpData.msg || 'Failed to send OTP');
+        // Stay on step 1 if OTP sending fails
+        setStep(1);
+        setOtpSent(false);
       }
     } catch (error) {
       console.error('Send OTP error:', error);
       showMessage('error', 'Network error. Please try again.');
+      setStep(1);
+      setOtpSent(false);
     } finally {
       setLoading(false);
     }
@@ -121,6 +176,20 @@ const SignUp = () => {
     if (element.value && element.nextSibling) {
       element.nextSibling.focus();
     }
+
+    // Auto-submit when all OTP digits are filled
+    if (element.value && index === 5) {
+      const allFilled = newOtp.every(digit => digit !== '');
+      if (allFilled) {
+        document.getElementById('verify-otp-btn')?.click();
+      }
+    }
+  };
+
+  const handleOtpKeyDown = (e, index) => {
+    if (e.key === 'Backspace' && !e.target.value && e.target.previousSibling) {
+      e.target.previousSibling.focus();
+    }
   };
 
   const handleOtpSubmit = async (e) => {
@@ -136,42 +205,41 @@ const SignUp = () => {
       return;
     }
 
+    // Check if OTP expired client-side
+    if (timeLeft <= 0) {
+      showMessage('error', 'OTP has expired. Please request a new one.');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // 1. Verify OTP
-      const verifyResponse = await fetch(API_ENDPOINTS.AUTH.VERIFY_OTP, {
+      // Combine OTP with registration data and send to signup endpoint
+      const signupResponse = await fetch(API_ENDPOINTS.AUTH.SIGNUP, {
         method: 'POST',
         headers: getHeaders(false),
-        body: JSON.stringify({ email: registrationData.email, otp }),
+        body: JSON.stringify({
+          ...registrationData,
+          otp: otp
+        }),
       });
 
-      const verifyData = await verifyResponse.json();
+      const signupData = await signupResponse.json();
 
-      if (verifyResponse.ok) {
-        // 2. OTP Verified: Proceed to final registration
-        const signupResponse = await fetch(API_ENDPOINTS.AUTH.SIGNUP, {
-          method: 'POST',
-          headers: getHeaders(false),
-          body: JSON.stringify(registrationData),
+      if (signupResponse.ok) {
+        // Successful Sign Up: Log user in and update global state
+        login(signupData.token, {
+          userId: signupData.userId,
+          name: signupData.name,
+          email: signupData.email,
+          photoUrl: signupData.photoUrl,
         });
 
-        const signupData = await signupResponse.json();
-
-        if (signupResponse.ok) {
-          // 3. Successful Sign Up: Log user in and update global state
-          login(signupData.token, {
-            userId: signupData.userId,
-            name: signupData.name,
-            email: signupData.email,
-            photoUrl: signupData.photoUrl,
-          });
-
-          showMessage('success', 'Account created successfully! Redirecting...');
-          setTimeout(() => navigate('/'), 1500);
-        } else {
-          showMessage('error', signupData.msg || 'Failed to create account');
-        }
+        showMessage('success', 'Account created successfully! Redirecting...');
+        setTimeout(() => navigate('/'), 1500);
       } else {
-        showMessage('error', verifyData.msg || 'Invalid OTP');
+        showMessage('error', signupData.msg || 'Failed to create account');
+        // Clear OTP on failure but stay on OTP step
+        setOtpCode(new Array(6).fill(''));
       }
     } catch (error) {
       console.error('OTP verification/Sign Up error:', error);
@@ -179,6 +247,62 @@ const SignUp = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Resend OTP functionality
+  const handleResendOTP = async () => {
+    setLoading(true);
+    setMessage({ type: null, text: '' });
+
+    try {
+      const { firstName, lastName, email } = registrationData;
+      const otpResponse = await fetch(API_ENDPOINTS.AUTH.SEND_OTP, {
+        method: 'POST',
+        headers: getHeaders(false),
+        body: JSON.stringify({ 
+          email,
+          firstName,
+          lastName 
+        }),
+      });
+
+      const otpData = await otpResponse.json();
+
+      if (otpResponse.ok) {
+        showMessage('success', 'New OTP sent to your email!');
+        // Reset OTP fields and timer
+        setOtpCode(new Array(6).fill(''));
+        setOtpExpiry(Date.now() + 2 * 60 * 1000);
+        setTimeLeft(2 * 60);
+        setCanResend(false);
+        
+        // For development: show OTP in console
+        if (otpData.debugOtp) {
+          console.log('New Development OTP:', otpData.debugOtp);
+        }
+      } else {
+        showMessage('error', otpData.msg || 'Failed to resend OTP');
+      }
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      showMessage('error', 'Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle back to registration - COMPLETELY RESET STATE
+  const handleBackToRegistration = () => {
+    console.log('Going back to registration - resetting all states');
+    // Reset ALL OTP-related states completely
+    setStep(1);
+    setOtpCode(new Array(6).fill(''));
+    setTimeLeft(0);
+    setCanResend(false);
+    setOtpExpiry(null);
+    setOtpSent(false);
+    setMessage({ type: null, text: '' });
+    setLoading(false);
   };
 
   const handleGoogleCallback = async (response) => {
@@ -215,10 +339,22 @@ const SignUp = () => {
     }
   };
 
+  // Improved Google Sign-Up initialization
   useEffect(() => {
     const initializeGoogleSignUp = () => {
-      if (window.google && window.google.accounts && API_CONFIG.GOOGLE_CLIENT_ID) {
+      console.log('Initializing Google Sign-Up...');
+      
+      // Check if required configuration is available
+      if (!API_CONFIG.GOOGLE_CLIENT_ID) {
+        console.error('Google Client ID is not configured');
+        showMessage('error', 'Google Sign-Up is not properly configured. Please contact support.');
+        return;
+      }
+
+      if (window.google && window.google.accounts) {
         try {
+          console.log('Google API loaded, initializing...');
+          
           window.google.accounts.id.initialize({
             client_id: API_CONFIG.GOOGLE_CLIENT_ID,
             callback: handleGoogleCallback,
@@ -227,6 +363,7 @@ const SignUp = () => {
           });
           
           if (googleButtonRef.current) {
+            console.log('Rendering Google button...');
             window.google.accounts.id.renderButton(
               googleButtonRef.current,
               {
@@ -236,39 +373,101 @@ const SignUp = () => {
                 text: 'signup_with',
                 shape: 'rectangular',
                 logo_alignment: 'left',
-                // UPDATED: Changed width from '400' to '300' for better mobile view
                 width: '300'
               }
             );
+            console.log('Google button rendered successfully');
           }
         } catch (error) {
           console.error('Error initializing Google Sign-Up:', error);
+          showMessage('error', 'Failed to initialize Google Sign-Up. Please try again.');
         }
+      } else {
+        console.error('Google accounts API not available');
       }
     };
 
-    if (window.google) {
-      initializeGoogleSignUp();
-    } else {
+    // Load Google Sign-In script if not already loaded
+    if (!window.google) {
+      console.log('Loading Google Sign-In script...');
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
-      script.onload = initializeGoogleSignUp;
+      script.onload = () => {
+        console.log('Google Sign-In script loaded successfully');
+        setGoogleScriptLoaded(true);
+        setTimeout(initializeGoogleSignUp, 100); // Small delay to ensure everything is ready
+      };
+      script.onerror = () => {
+        console.error('Failed to load Google Sign-In script');
+        showMessage('error', 'Failed to load Google Sign-In. Please check your connection.');
+      };
       document.head.appendChild(script);
+    } else {
+      console.log('Google API already loaded, initializing directly...');
+      initializeGoogleSignUp();
     }
 
     return () => {
       if (window.google && window.google.accounts) {
-        window.google.accounts.id.cancel();
+        try {
+          window.google.accounts.id.cancel();
+        } catch (error) {
+          console.warn('Error cleaning up Google Sign-In:', error);
+        }
       }
     };
   }, []);
 
+  // Re-initialize when script loads
+  useEffect(() => {
+    if (googleScriptLoaded && window.google) {
+      const timer = setTimeout(() => {
+        initializeGoogleSignUp();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [googleScriptLoaded]);
+
+  const initializeGoogleSignUp = () => {
+    if (!API_CONFIG.GOOGLE_CLIENT_ID) {
+      console.error('Google Client ID is not configured');
+      return;
+    }
+
+    if (window.google && window.google.accounts) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: API_CONFIG.GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallback,
+          context: 'signup',
+          ux_mode: 'popup',
+        });
+        
+        if (googleButtonRef.current) {
+          window.google.accounts.id.renderButton(
+            googleButtonRef.current,
+            {
+              type: 'standard',
+              theme: 'outline',
+              size: 'large',
+              text: 'signup_with',
+              shape: 'rectangular',
+              logo_alignment: 'left',
+              width: '300'
+            }
+          );
+        }
+      } catch (error) {
+        console.error('Error initializing Google Sign-Up:', error);
+      }
+    }
+  };
+
   // --- Component Render ---
 
   return (
-    // FIX: Removed hardcoded bg classes and used theme-aware dark-gradient-secondary
     <div className="min-h-screen dark-gradient-secondary flex items-center justify-center p-4 py-12">
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         
@@ -279,7 +478,6 @@ const SignUp = () => {
                     <div className="h-12 w-12 bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg">
                         <i data-feather="code" className="text-white text-xl"></i>
                     </div>
-                    {/* FIX: Use nav-user-text for visibility across themes */}
                     <span className="ml-3 text-3xl font-bold nav-user-text">CS Studio</span>
                 </div>
                 
@@ -334,15 +532,18 @@ const SignUp = () => {
                     <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-md">
                         <i data-feather="code" className="text-white"></i>
                     </div>
-                    {/* FIX: Use nav-user-text for visibility across themes */}
                     <span className="ml-2 text-xl font-bold nav-user-text">CS Studio</span>
                 </Link>
             </div>
             
             <div className="dark-glass rounded-lg shadow-2xl p-8 border border-gray-700">
                 <div className="text-center mb-8">
-                    <h2 className="text-2xl font-bold text-white">Create Account</h2>
-                    <p className="mt-1 text-gray-400 text-sm">Start your coding journey in minutes</p>
+                    <h2 className="text-2xl font-bold text-white">
+                        {step === 1 ? 'Create Account' : 'Verify Email'}
+                    </h2>
+                    <p className="mt-1 text-gray-400 text-sm">
+                        {step === 1 ? 'Start your coding journey in minutes' : 'Enter the OTP sent to your email'}
+                    </p>
                 </div>
 
                 {/* Message Display */}
@@ -370,7 +571,6 @@ const SignUp = () => {
                                 id="firstName"
                                 value={registrationData.firstName}
                                 onChange={handleChange}
-                                // FIX: Removed hardcoded bg/border/text, relies on form-input class
                                 className="form-input w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                                 placeholder="First Name" 
                                 disabled={loading}
@@ -383,7 +583,6 @@ const SignUp = () => {
                                 id="lastName"
                                 value={registrationData.lastName}
                                 onChange={handleChange}
-                                // FIX: Removed hardcoded bg/border/text, relies on form-input class
                                 className="form-input w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                                 placeholder="Last Name"
                                 disabled={loading}
@@ -399,7 +598,6 @@ const SignUp = () => {
                             id="email"
                             value={registrationData.email}
                             onChange={handleChange}
-                            // FIX: Removed hardcoded bg/border/text, relies on form-input class
                             className="form-input w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                             placeholder="Email Address"
                             disabled={loading}
@@ -415,7 +613,6 @@ const SignUp = () => {
                                 id="password"
                                 value={registrationData.password}
                                 onChange={handleChange}
-                                // FIX: Removed hardcoded bg/border/text, relies on form-input class
                                 className="form-input w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                                 placeholder="Password"
                                 disabled={loading}
@@ -442,7 +639,6 @@ const SignUp = () => {
                             id="confirmPassword"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
-                            // FIX: Removed hardcoded bg/border/text, relies on form-input class
                             className="form-input w-full px-4 py-3 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                             placeholder="Confirm Password"
                             disabled={loading}
@@ -481,22 +677,34 @@ const SignUp = () => {
                             {loading ? (
                             <span className="flex items-center justify-center">
                                 <i data-feather="loader" className="w-5 h-5 animate-spin mr-2"></i>
-                                Creating Account...
+                                Sending OTP...
                             </span>
                             ) : (
-                            'Create Account'
+                            'Send OTP'
                             )}
                         </button>
                     </form>
                 ) : (
                     /* Step 2: OTP Verification */
                     <form onSubmit={handleOtpSubmit} className="space-y-6">
-                        <p className="text-gray-400 text-center mb-6">
+                        <p className="text-gray-400 text-center mb-2">
                             We sent a 6-digit code to <strong className="text-white">{registrationData.email}</strong>
                         </p>
 
+                        {/* Timer Display */}
+                        <div className="text-center mb-4">
+                            <div className={`text-sm font-medium ${timeLeft > 30 ? 'text-green-400' : 'text-red-400'}`}>
+                                ⏰ OTP expires in: {formatTime(timeLeft)}
+                            </div>
+                            {timeLeft === 0 && (
+                                <div className="text-red-400 text-sm mt-1">
+                                    OTP has expired. Please request a new one.
+                                </div>
+                            )}
+                        </div>
+
                         {/* OTP Input (Center Aligned) */}
-                        <div className="flex justify-center space-x-2 mb-6">
+                        <div className="flex justify-center space-x-2 mb-4">
                             {otpCode.map((digit, index) => (
                             <input
                                 key={index}
@@ -504,18 +712,31 @@ const SignUp = () => {
                                 maxLength="1"
                                 value={digit}
                                 onChange={(e) => handleOtpChange(e.target, index)}
+                                onKeyDown={(e) => handleOtpKeyDown(e, index)}
                                 onFocus={(e) => e.target.select()}
-                                // FIX: Removed hardcoded bg/border/text, relies on form-input class
                                 className="form-input w-12 h-14 text-center text-2xl font-bold rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                                disabled={loading}
+                                disabled={loading || timeLeft === 0}
                             />
                             ))}
                         </div>
 
+                        {/* Resend OTP Link */}
+                        <div className="text-center mb-4">
+                            <button
+                                type="button"
+                                onClick={handleResendOTP}
+                                disabled={loading || !canResend}
+                                className="text-primary-400 hover:text-primary-300 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Didn't receive code? Resend OTP
+                            </button>
+                        </div>
+
                         {/* Verify Button */}
                         <button
+                            id="verify-otp-btn"
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || timeLeft === 0}
                             className="w-full py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         >
                             {loading ? (
@@ -528,10 +749,10 @@ const SignUp = () => {
                             )}
                         </button>
 
-                        {/* Back Button */}
+                        {/* Back Button - FIXED: Uses the proper reset function */}
                         <button
                             type="button"
-                            onClick={() => setStep(1)}
+                            onClick={handleBackToRegistration}
                             className="w-full mt-4 py-2 text-primary-400 hover:text-white transition-colors"
                             disabled={loading}
                         >
@@ -553,6 +774,15 @@ const SignUp = () => {
                     <div className="w-full flex justify-center">
                       <div ref={googleButtonRef}></div>
                     </div>
+
+                    {/* Fallback message if Google Sign-In fails */}
+                    {!API_CONFIG.GOOGLE_CLIENT_ID && (
+                      <div className="text-center mt-4 p-3 bg-yellow-500/20 border border-yellow-500 rounded-lg">
+                        <p className="text-yellow-200 text-sm">
+                          Google Sign-Up is currently unavailable. Please use email sign-up.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Sign In Link */}
                     <div className="mt-6 text-center">

@@ -1,0 +1,40 @@
+{
+  "name": "Coding Problems API",
+  "version": "1.0.0",
+  "description": "API endpoints for managing coding problems and submissions",
+  "endpoints": {
+    "getAllProblems": {
+      "method": "GET",
+      "url": "/api/problems",
+      "description": "Fetch all coding problems with basic info"
+    },
+    "getProblemById": {
+      "method": "GET", 
+      "url": "/api/problems/:id",
+      "description": "Fetch detailed problem by ID"
+    },
+    "getProblemTestCases": {
+      "method": "GET",
+      "url": "/api/problems/:id/test-cases",
+      "description": "Fetch all test cases for a problem"
+    },
+    "submitSolution": {
+      "method": "POST",
+      "url": "/api/problems/:id/submit",
+      "description": "Submit solution for evaluation"
+    },
+    "runTestCases": {
+      "method": "POST",
+      "url": "/api/problems/:id/run-tests",
+      "description": "Run code against test cases"
+    }
+  },
+  "socketEvents": {
+    "execute-code": "Send code for execution",
+    "send-input": "Send input to running program",
+    "stop-execution": "Stop code execution",
+    "execution-result": "Final execution result",
+    "execution-output": "Real-time output chunks",
+    "waiting-for-input": "Program waiting for input"
+  }
+}

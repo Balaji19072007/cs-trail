@@ -2,8 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from "../../hooks/useAuth.jsx"; 
+import { useTheme } from '../../contexts/ThemeContext.jsx';
 import * as feather from 'feather-icons';
 import SearchBar from './SearchBar.jsx'; 
+
 
 // Data that describes all navigation links
 // PRIMARY items for the new bottom nav (high-traffic pages)
@@ -26,15 +28,11 @@ const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
 
 const Navbar = () => {
     const { isLoggedIn, user, logout, loading } = useAuth();
+    const { theme, toggleTheme, isDark } = useTheme(); // Use theme from context
     const location = useLocation();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     
-    const [isDarkMode, setIsDarkMode] = useState(() => {
-        const storedTheme = localStorage.getItem('theme');
-        return storedTheme ? storedTheme === 'dark' : false; 
-    }); 
-
     const featherIconsInitialized = useRef(false);
 
     const currentPath = location.pathname.replace(/.html$/, '');
@@ -55,22 +53,6 @@ const Navbar = () => {
     useEffect(() => {
         initializeFeatherIcons();
     });
-
-    // Handle theme changes
-    useEffect(() => {
-        // Apply theme class to body and store preference
-        const theme = isDarkMode ? 'dark' : 'light';
-        document.body.classList.remove('dark-theme', 'light-theme');
-        document.body.classList.add(theme + '-theme');
-        localStorage.setItem('theme', theme);
-        
-        // Re-initialize icons after theme change with a small delay
-        const timer = setTimeout(() => {
-            initializeFeatherIcons();
-        }, 10);
-        
-        return () => clearTimeout(timer);
-    }, [isDarkMode]);
 
     // ⭐ NEW useEffect to handle content spacing for fixed navbars
     useEffect(() => {
@@ -104,10 +86,6 @@ const Navbar = () => {
     useEffect(() => {
         setIsMobileMenuOpen(false);
     }, [location.pathname]);
-
-    const handleThemeToggle = () => {
-        setIsDarkMode(prev => !prev);
-    }
     
     const toggleMobileMenu = () => {
         setIsMobileMenuOpen(prev => !prev);
@@ -134,14 +112,14 @@ const Navbar = () => {
             const mobileClasses = `flex items-center px-4 py-3 text-base font-medium rounded-lg mx-2 transition-all duration-200 border-l-4 ${
                 isActive 
                     ? 'bg-primary-500/20 text-primary-600 border-primary-500' 
-                    : `border-transparent ${isDarkMode ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
+                    : `border-transparent ${isDark ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
             }`;
             
             // Mobile Bottom Nav Classes (used for PRIMARY_NAV_ITEMS in bottom nav)
             const bottomNavClasses = `flex flex-col items-center justify-center p-2 pt-2.5 transition-colors duration-200 ${
                 isActive
                     ? 'text-primary-500' // Active color for bottom nav
-                    : (isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900')
+                    : (isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900')
             }`;
 
 
@@ -193,12 +171,12 @@ const Navbar = () => {
     }
 
     // Theme-aware background and text classes
-    const mobileBgClass = isDarkMode ? 'bg-gray-900' : 'bg-white';
-    const mobileBorderClass = isDarkMode ? 'border-gray-700' : 'border-gray-200';
-    const mobileTextClass = isDarkMode ? 'text-white' : 'text-gray-900';
-    const mobileSecondaryTextClass = isDarkMode ? 'text-gray-400' : 'text-gray-500';
-    const mobileHoverBgClass = isDarkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-100';
-    const mobileCardBgClass = isDarkMode ? 'bg-gray-800/50' : 'bg-gray-50';
+    const mobileBgClass = isDark ? 'bg-gray-900' : 'bg-white';
+    const mobileBorderClass = isDark ? 'border-gray-700' : 'border-gray-200';
+    const mobileTextClass = isDark ? 'text-white' : 'text-gray-900';
+    const mobileSecondaryTextClass = isDark ? 'text-gray-400' : 'text-gray-500';
+    const mobileHoverBgClass = isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-100';
+    const mobileCardBgClass = isDark ? 'bg-gray-800/50' : 'bg-gray-50';
     
     if (loading) {
         // Reduced opacity to 0 to make it invisible while loading
@@ -206,13 +184,13 @@ const Navbar = () => {
     }
 
     // Get the correct theme icon
-    const themeIcon = isDarkMode ? 'sun' : 'moon';
+    const themeIcon = isDark ? 'sun' : 'moon';
     const menuIcon = isMobileMenuOpen ? 'x' : 'menu';
 
     return (
         <>
             {/* 1. TOP NAVBAR (STATIC) */}
-            <nav className={`${isDarkMode ? 'dark-gradient' : 'bg-white shadow-lg'} fixed top-0 left-0 w-full z-50 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+            <nav className={`${isDark ? 'dark-gradient' : 'bg-white shadow-lg'} fixed top-0 left-0 w-full z-50 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 {/* Main Flex Container */}
                 <div className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8">
                     
@@ -223,7 +201,7 @@ const Navbar = () => {
                                 <div className="h-8 w-8 bg-gradient-to-r from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-lg">
                                     <i data-feather="code" className="text-white w-4 h-4 logo-icon"></i>
                                 </div>
-                                <span className={`ml-2 text-xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>CS Studio</span>
+                                <span className={`ml-2 text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>CS Studio</span>
                             </Link>
                         </div>
                         
@@ -247,13 +225,13 @@ const Navbar = () => {
                         
                         {/* Theme Toggle */}
                         <button 
-                            onClick={handleThemeToggle}
+                            onClick={toggleTheme}
                             className={`hidden sm:block p-2 rounded-lg transition-all duration-300 ${
-                                isDarkMode 
+                                isDark 
                                     ? 'text-gray-400 hover:text-white hover:bg-gray-700' 
                                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
                             }`}
-                            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                         >
                             <i data-feather={themeIcon} className="w-5 h-5"></i>
                         </button>
@@ -263,7 +241,7 @@ const Navbar = () => {
                             {isLoggedIn ? (
                                 <div id="logged-in-profile" className="flex items-center space-x-3 relative">
                                     {user && user.name && (
-                                        <span className={`hidden lg:block font-medium text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        <span className={`hidden lg:block font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
                                             {user.name.split(' ')[0]}
                                         </span>
                                     )}
@@ -276,19 +254,19 @@ const Navbar = () => {
                                         {renderAvatar()}
                                     </button>
                                     
-                                    <div id="profile-dropdown-menu" className={`absolute right-0 top-16 mt-2 w-56 ${isDropdownOpen ? 'block' : 'hidden'} rounded-lg shadow-xl divide-y ${isDarkMode ? 'divide-gray-700 bg-gray-800' : 'divide-gray-200 bg-white'} z-50`}>
+                                    <div id="profile-dropdown-menu" className={`absolute right-0 top-16 mt-2 w-56 ${isDropdownOpen ? 'block' : 'hidden'} rounded-lg shadow-xl divide-y ${isDark ? 'divide-gray-700 bg-gray-800' : 'divide-gray-200 bg-white'} z-50`}>
                                         {user && (
                                             <>
-                                                <div className={`px-4 py-3 ${isDarkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                                                    <p className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{user.name}</p>
-                                                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
+                                                <div className={`px-4 py-3 ${isDark ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                                                    <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{user.name}</p>
+                                                    <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
                                                 </div>
                                                 <div className="py-1">
                                                     {/* UPDATED: Link to My Courses page */}
                                                     <Link 
                                                         to="/my-courses" 
                                                         className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                            isDark ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                                                         }`}
                                                         onClick={() => setIsDropdownOpen(false)}
                                                     >
@@ -298,7 +276,7 @@ const Navbar = () => {
                                                     <Link 
                                                         to="/my-progress" 
                                                         className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                            isDark ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                                                         }`}
                                                         onClick={() => setIsDropdownOpen(false)}
                                                     >
@@ -307,7 +285,7 @@ const Navbar = () => {
                                                     <Link 
                                                         to="/settings" 
                                                         className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
-                                                            isDarkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                            isDark ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                                                         }`}
                                                         onClick={() => setIsDropdownOpen(false)}
                                                     >
@@ -316,7 +294,7 @@ const Navbar = () => {
                                                     <button 
                                                         id="sign-out-button" 
                                                         className={`w-full text-left flex items-center px-4 py-2 text-sm transition-colors duration-200 ${
-                                                            isDarkMode ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300' : 'text-red-600 hover:bg-red-50 hover:text-red-700'
+                                                            isDark ? 'text-red-400 hover:bg-red-500/20 hover:text-red-300' : 'text-red-600 hover:bg-red-50 hover:text-red-700'
                                                         }`}
                                                         onClick={handleLogout}
                                                     >
@@ -345,7 +323,7 @@ const Navbar = () => {
                                 id="mobile-menu-button" 
                                 type="button" 
                                 className={`inline-flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                                    isDarkMode 
+                                    isDark 
                                         ? 'text-gray-400 hover:text-white hover:bg-gray-700/50' 
                                         : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
                                 }`}
@@ -368,7 +346,7 @@ const Navbar = () => {
                         <div className={`absolute right-0 top-0 w-80 h-full shadow-2xl border-l transform transition-transform duration-300 ease-in-out ${mobileBgClass} ${mobileBorderClass}`}>
                             <div className="flex flex-col h-full">
                                 {/* Header */}
-                                <div className={`flex items-center justify-between p-4 border-b ${mobileBorderClass} ${isDarkMode ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+                                <div className={`flex items-center justify-between p-4 border-b ${mobileBorderClass} ${isDark ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
                                     <div className="flex items-center">
                                         <div className="h-8 w-8 bg-gradient-to-r from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-lg">
                                             <i data-feather="code" className="text-white w-4 h-4"></i>
@@ -378,7 +356,7 @@ const Navbar = () => {
                                     <button 
                                         onClick={toggleMobileMenu}
                                         className={`p-2 rounded-lg transition-colors duration-200 ${
-                                            isDarkMode 
+                                            isDark 
                                                 ? 'text-gray-400 hover:text-white hover:bg-gray-700' 
                                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
                                         }`}
@@ -391,7 +369,7 @@ const Navbar = () => {
                                 <div className="flex-1 overflow-y-auto pb-4"> {/* Added pb-4 for space above the footer */}
                                     {/* User Profile Section */}
                                     {isLoggedIn && user && (
-                                        <div className={`p-4 border-b ${mobileBorderClass} ${isDarkMode ? 'bg-gray-800/30' : 'bg-gray-50'}`}>
+                                        <div className={`p-4 border-b ${mobileBorderClass} ${isDark ? 'bg-gray-800/30' : 'bg-gray-50'}`}>
                                             <div className="flex items-center space-x-3">
                                                 <div className="h-12 w-12 rounded-full bg-gradient-to-r from-primary-500 to-primary-600 flex items-center justify-center text-white overflow-hidden shadow-lg">
                                                     {renderAvatar()}
@@ -416,7 +394,7 @@ const Navbar = () => {
                                                 >
                                                     <i data-feather="bar-chart-2" className="w-5 h-5 text-primary-500 mb-1 group-hover:scale-110 transition-transform"></i>
                                                     <span className={`text-xs group-hover:scale-105 transition-transform ${
-                                                        isDarkMode ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
+                                                        isDark ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
                                                     }`}>My Progress</span>
                                                 </Link>
                                                 {/* UPDATED: Link to My Courses page */}
@@ -427,7 +405,7 @@ const Navbar = () => {
                                                 >
                                                     <i data-feather="book-open" className="w-5 h-5 text-primary-500 mb-1 group-hover:scale-110 transition-transform"></i>
                                                     <span className={`text-xs group-hover:scale-105 transition-transform ${
-                                                        isDarkMode ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
+                                                        isDark ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
                                                     }`}>My Courses</span>
                                                 </Link>
                                             </div>
@@ -454,22 +432,22 @@ const Navbar = () => {
                                     {/* Theme Toggle */}
                                     <div className={`p-4 border-t ${mobileBorderClass}`}>
                                         <button 
-                                            onClick={handleThemeToggle}
+                                            onClick={toggleTheme}
                                             className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors duration-200 group ${mobileCardBgClass} ${mobileHoverBgClass}`}
                                         >
                                             <div className="flex items-center">
-                                                <i data-feather={themeIcon} className={`w-5 h-5 mr-3 ${isDarkMode ? 'text-yellow-400' : 'text-yellow-500'}`}></i>
+                                                <i data-feather={themeIcon} className={`w-5 h-5 mr-3 ${isDark ? 'text-yellow-400' : 'text-yellow-500'}`}></i>
                                                 <span className={`group-hover:scale-105 transition-transform ${
-                                                    isDarkMode ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
+                                                    isDark ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
                                                 }`}>
-                                                    {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+                                                    {isDark ? 'Light Mode' : 'Dark Mode'}
                                                 </span>
                                             </div>
                                             <div className={`w-12 h-6 rounded-full transition-colors duration-200 ${
-                                                isDarkMode ? 'bg-primary-500' : 'bg-gray-300'
+                                                isDark ? 'bg-primary-500' : 'bg-gray-300'
                                             }`}>
                                                 <div className={`w-5 h-5 bg-white rounded-full transform transition-transform duration-200 ${
-                                                    isDarkMode ? 'translate-x-7' : 'translate-x-1'
+                                                    isDark ? 'translate-x-7' : 'translate-x-1'
                                                 }`}></div>
                                             </div>
                                         </button>
@@ -477,13 +455,13 @@ const Navbar = () => {
                                 </div>
 
                                 {/* Footer Actions */}
-                                <div className={`p-4 border-t ${mobileBorderClass} ${isDarkMode ? 'bg-gray-800/30' : 'bg-gray-50'}`}>
+                                <div className={`p-4 border-t ${mobileBorderClass} ${isDark ? 'bg-gray-800/30' : 'bg-gray-50'}`}>
                                     {isLoggedIn ? (
                                         <div className="space-y-2">
                                             <button 
                                                 onClick={handleLogout}
                                                 className={`w-full flex items-center justify-center p-3 rounded-lg transition-all duration-200 group ${
-                                                    isDarkMode 
+                                                    isDark 
                                                         ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 hover:text-red-300' 
                                                         : 'bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700'
                                                 }`}
@@ -521,7 +499,7 @@ const Navbar = () => {
             
             {/* 2. MOBILE BOTTOM NAVIGATION (STATIC) */}
             {isLoggedIn && (
-                <div id="mobile-bottom-nav" className={`fixed bottom-0 left-0 right-0 h-16 sm:hidden z-40 shadow-2xl ${isDarkMode ? 'dark-gradient border-t border-gray-700' : 'bg-white border-t border-gray-200'}`}>
+                <div id="mobile-bottom-nav" className={`fixed bottom-0 left-0 right-0 h-16 sm:hidden z-40 shadow-2xl ${isDark ? 'dark-gradient border-t border-gray-700' : 'bg-white border-t border-gray-200'}`}>
                     <div className="h-full flex justify-around">
                         {renderNavLinks(true, PRIMARY_NAV_ITEMS)}
                     </div>

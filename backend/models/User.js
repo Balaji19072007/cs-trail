@@ -1,3 +1,4 @@
+// models/User.js
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
@@ -43,9 +44,9 @@ const UserSchema = new Schema({
         type: Number,
         default: 0
     },
-    averageAccuracy: { // Added for leaderboard display
+    averageAccuracy: {
         type: Number,
-        default: 0, // Stored as a percentage (0-100)
+        default: 0
     },
     // --- End Leaderboard Fields ---
 
@@ -65,11 +66,32 @@ const UserSchema = new Schema({
     googleId: {
         type: String,
         sparse: true
+    },
+    
+    // --- RATING TRACKING FIELDS ---
+    ratingEligible: {
+        type: Boolean,
+        default: false
+    },
+    ratingShown: {
+        type: Boolean,
+        default: false
+    },
+    usageStartTime: {
+        type: Date,
+        default: null
+    },
+    accumulatedUsageTime: {
+        type: Number, // in milliseconds
+        default: 0
+    },
+    lastActivityTime: {
+        type: Date,
+        default: null
     }
-    // Removed: score (redundant with totalPoints)
-    // Removed: rank (should be calculated, not stored)
+    // --- END RATING TRACKING FIELDS ---
 }, {
-    timestamps: true // This automatically adds createdAt and updatedAt fields
+    timestamps: true
 });
 
 module.exports = mongoose.model('User', UserSchema);
