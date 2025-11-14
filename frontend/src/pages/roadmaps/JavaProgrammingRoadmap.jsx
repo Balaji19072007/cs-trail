@@ -243,8 +243,27 @@ const FloatingAnimation = ({ fromPhase, toPhase, isVisible, onComplete }) => {
   );
 };
 
+// Animated Connecting Line Component
+const AnimatedConnectingLine = ({ isCompleted, isAnimating, isDark, isLast }) => {
+  if (isLast) return null;
+
+  return (
+    <div className="relative">
+      {/* Base line */}
+      <div className={`w-1 h-full transition-all duration-1000 ${
+        isCompleted ? 'bg-green-500' : isDark ? 'bg-gray-600' : 'bg-gray-300'
+      }`}>
+        {/* Animation overlay */}
+        {isAnimating && (
+          <div className="absolute top-0 left-0 w-full h-0 bg-green-500 animate-lineFlow"></div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Separated Number Component with Enhanced Animation
-const PhaseNumber = ({ number, isCompleted, isActive, isDark, isLast, isExpanded, showProgressAnimation }) => {
+const PhaseNumber = ({ number, isCompleted, isActive, isDark, isLast, isAnimating }) => {
   return (
     <div className="flex flex-col items-center mr-4 md:mr-8 relative">
       <div className={`relative w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center text-lg md:text-xl font-bold border-4 transition-all duration-500 ${
@@ -253,7 +272,7 @@ const PhaseNumber = ({ number, isCompleted, isActive, isDark, isLast, isExpanded
           : isActive
             ? 'bg-primary-500 border-primary-500 text-white shadow-lg scale-110'
             : isDark
-              ? 'bg-gray-800 border-gray-700 text-gray-400'
+              ? 'bg-gray-800 border-gray-600 text-gray-300'
               : 'bg-white border-gray-300 text-gray-600'
       }`}>
         {number}
@@ -279,28 +298,14 @@ const PhaseNumber = ({ number, isCompleted, isActive, isDark, isLast, isExpanded
         )}
       </div>
       
-      {/* Enhanced Connecting Line */}
+      {/* Animated Connecting Line - Only show if not last phase */}
       {!isLast && (
-        <div className={`w-1 h-full mt-2 transition-all duration-700 relative overflow-hidden ${
-          isCompleted 
-            ? 'bg-green-500' 
-            : isActive
-              ? 'bg-primary-500'
-              : isDark 
-                ? 'bg-gray-700' 
-                : 'bg-gray-300'
-        }`}>
-          {/* Animated progress line */}
-          {isCompleted && (
-            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-green-400 to-green-600 animate-pulse"></div>
-          )}
-          {showProgressAnimation && (
-            <div className="absolute top-0 left-0 w-full h-0 bg-green-500 animate-lineFill"></div>
-          )}
-          {isActive && !isCompleted && (
-            <div className="absolute top-0 left-0 w-full h-2 bg-primary-400 animate-bounce"></div>
-          )}
-        </div>
+        <AnimatedConnectingLine 
+          isCompleted={isCompleted}
+          isAnimating={isAnimating}
+          isDark={isDark}
+          isLast={isLast}
+        />
       )}
     </div>
   );
@@ -331,7 +336,7 @@ const ProgressTracker = ({ currentStep, totalSteps, isDark }) => {
 };
 
 // Phase Header Component
-const PhaseHeader = ({ phase, isExpanded, onToggle, isCompleted, isActive, isDark, index, isLast, showProgressAnimation }) => {
+const PhaseHeader = ({ phase, isExpanded, onToggle, isCompleted, isActive, isDark, index, isLast, isAnimating }) => {
   return (
     <div className="flex items-start">
       <PhaseNumber 
@@ -340,8 +345,7 @@ const PhaseHeader = ({ phase, isExpanded, onToggle, isCompleted, isActive, isDar
         isActive={isActive}
         isDark={isDark}
         isLast={isLast}
-        isExpanded={isExpanded}
-        showProgressAnimation={showProgressAnimation}
+        isAnimating={isAnimating}
       />
       
       <div 
@@ -353,7 +357,7 @@ const PhaseHeader = ({ phase, isExpanded, onToggle, isCompleted, isActive, isDar
               : isActive
                 ? 'bg-primary-50 border-primary-500 hover:border-primary-600'
                 : isDark
-                  ? 'bg-gray-800 border-gray-700 hover:border-gray-600 hover:bg-gray-750'
+                  ? 'bg-gray-800 border-gray-600 hover:border-gray-500 hover:bg-gray-750'
                   : 'bg-white border-gray-300 hover:border-gray-400 hover:bg-gray-50'
         }`}
         onClick={onToggle}
@@ -412,20 +416,13 @@ const PhaseContent = ({ phase, isCompleted, onToggle, isDark, index, isExpanded,
 
   return (
     <div className="flex">
-      {/* Enhanced Connecting Line Space - Now properly connects */}
+      {/* Space for the number and connecting line */}
       <div className="w-16 md:w-24 mr-4 md:mr-8 flex flex-col items-center">
-        {/* Extended connecting line when content is expanded */}
-        <div className={`w-1 flex-1 transition-all duration-500 ${
-          isCompleted 
-            ? 'bg-green-500' 
-            : isDark 
-              ? 'bg-gray-700' 
-              : 'bg-gray-300'
-        }`}></div>
+        {/* Reserved space for alignment */}
       </div>
       
       <div className={`flex-1 mt-2 p-4 md:p-6 rounded-xl border-2 transition-all duration-300 ${
-        isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-300 bg-white'
+        isDark ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-white'
       }`}>
         <div className="grid md:grid-cols-2 gap-6 md:gap-8">
           {/* Topics */}
@@ -469,19 +466,6 @@ const PhaseContent = ({ phase, isCompleted, onToggle, isDark, index, isExpanded,
           </div>
         </div>
 
-        {/* YouTube Resource */}
-        {phase.youtube_resource && (
-          <div className="mt-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
-            <h4 className={`font-semibold mb-2 flex items-center text-base md:text-lg text-yellow-800`}>
-              <span className="mr-2">📺</span>
-              YouTube Resource
-            </h4>
-            <p className="text-yellow-700 text-sm md:text-base">
-              👉 {phase.youtube_resource}
-            </p>
-          </div>
-        )}
-
         {/* Action Button */}
         <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-gray-700 flex justify-end">
           <button
@@ -500,6 +484,72 @@ const PhaseContent = ({ phase, isCompleted, onToggle, isDark, index, isExpanded,
             {isCompleted ? '✓ Phase Completed' : canMarkComplete ? 'Mark as Complete' : 'Complete Previous Phase First'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// Main container with continuous connecting line
+const PhaseContainer = ({ children, isDark, completedCount, totalPhases }) => {
+  const progressPercent = (completedCount / totalPhases) * 100;
+  
+  // Calculate the height of the progress line - stop at the last phase
+  const progressLineHeight = Math.min(progressPercent, ((totalPhases - 1) / totalPhases) * 100);
+  
+  return (
+    <div className="relative">
+      {/* Continuous vertical connecting line that spans only up to the last phase */}
+      <div className="absolute left-6 md:left-8 top-0 w-1 z-0" style={{ height: 'calc(100% - 4rem)' }}>
+        {/* Base line */}
+        <div className={`w-full h-full ${isDark ? 'bg-gray-600' : 'bg-gray-300'} rounded-full`}></div>
+        
+        {/* Progress line - animated height change, stops before the last phase */}
+        <div 
+          className="absolute top-0 left-0 w-full bg-green-500 rounded-full transition-all duration-1500 ease-out"
+          style={{ height: `${progressLineHeight}%` }}
+        ></div>
+        
+        {/* Pulsing effect at the progress tip */}
+        {completedCount > 0 && completedCount < totalPhases && (
+          <div 
+            className="absolute w-3 h-3 bg-green-500 rounded-full -left-1 transform -translate-y-1/2 animate-pulse"
+            style={{ top: `${progressLineHeight}%` }}
+          ></div>
+        )}
+      </div>
+      
+      <div className="space-y-6 md:space-y-8 relative z-20">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// Completion Celebration Component
+const CompletionCelebration = ({ isDark, isVisible }) => {
+  if (!isVisible) return null;
+
+  return (
+    <div className={`mt-8 p-6 md:p-8 rounded-xl border-2 text-center ${
+      isDark ? 'border-green-500 bg-green-900/20' : 'border-green-500 bg-green-50'
+    }`}>
+      <div className="flex justify-center mb-4">
+        <div className="w-16 h-16 md:w-20 md:h-20 bg-green-500 rounded-full flex items-center justify-center animate-bounce">
+          <svg className="w-8 h-8 md:w-10 md:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+      </div>
+      <h3 className={`text-2xl md:text-3xl font-bold mb-4 ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+        🎉 Congratulations!
+      </h3>
+      <p className={`text-lg md:text-xl mb-6 ${isDark ? 'text-green-200' : 'text-green-800'}`}>
+        You've completed the Java Programming Roadmap!
+      </p>
+      <div className={`p-4 rounded-lg ${isDark ? 'bg-green-800/30' : 'bg-green-100'}`}>
+        <p className={`font-semibold ${isDark ? 'text-green-300' : 'text-green-700'}`}>
+          Next Steps: Start building projects and explore advanced Java concepts!
+        </p>
       </div>
     </div>
   );
@@ -554,29 +604,38 @@ const JavaProgrammingRoadmap = () => {
   const [expandedPhases, setExpandedPhases] = useState([0]);
   const [showFloatingAnimation, setShowFloatingAnimation] = useState(false);
   const [animationPhase, setAnimationPhase] = useState({ from: null, to: null });
-  const [showProgressAnimation, setShowProgressAnimation] = useState(false);
+  const [animatingPhases, setAnimatingPhases] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Load progress from localStorage
-    const savedProgress = localStorage.getItem('java-roadmap-progress');
-    if (savedProgress) {
+    const loadProgress = () => {
       try {
-        const parsedProgress = JSON.parse(savedProgress);
-        if (Array.isArray(parsedProgress)) {
-          setCompletedPhases(parsedProgress);
+        const savedProgress = localStorage.getItem('java-roadmap-progress');
+        console.log('Loading progress from localStorage:', savedProgress);
+        
+        if (savedProgress) {
+          const parsedProgress = JSON.parse(savedProgress);
+          if (Array.isArray(parsedProgress)) {
+            setCompletedPhases(parsedProgress);
+            console.log('Progress loaded successfully:', parsedProgress);
+          } else {
+            console.log('Invalid progress format, setting empty array');
+            setCompletedPhases([]);
+          }
         } else {
+          console.log('No saved progress found, setting empty array');
           setCompletedPhases([]);
-          localStorage.setItem('java-roadmap-progress', JSON.stringify([]));
         }
       } catch (error) {
         console.error('Error parsing saved progress:', error);
         setCompletedPhases([]);
-        localStorage.setItem('java-roadmap-progress', JSON.stringify([]));
+      } finally {
+        setIsLoading(false);
       }
-    } else {
-      setCompletedPhases([]);
-      localStorage.setItem('java-roadmap-progress', JSON.stringify([]));
-    }
+    };
+
+    loadProgress();
   }, []);
 
   const handleMarkComplete = (phaseIndex) => {
@@ -592,25 +651,36 @@ const JavaProgrammingRoadmap = () => {
       setAnimationPhase({ from: phaseIndex, to: phaseIndex + 1 });
       setShowFloatingAnimation(true);
       
+      // Start line animation for the completed phase
+      setAnimatingPhases(prev => [...prev, phaseIndex]);
+      
       // Add to completed
       newCompletedPhases.push(phaseIndex);
       setCompletedPhases(newCompletedPhases);
 
-      // Show progress animation
-      setShowProgressAnimation(true);
-      setTimeout(() => setShowProgressAnimation(false), 2000);
+      // Save to localStorage immediately
+      localStorage.setItem('java-roadmap-progress', JSON.stringify(newCompletedPhases));
+      console.log('Progress saved to localStorage:', newCompletedPhases);
 
       // Hide floating animation after delay
       setTimeout(() => {
         setShowFloatingAnimation(false);
       }, 1500);
+
+      // Remove from animating phases after line animation completes
+      setTimeout(() => {
+        setAnimatingPhases(prev => prev.filter(phase => phase !== phaseIndex));
+      }, 2000);
     }
   };
 
-  // Save to localStorage whenever completedPhases changes
+  // Save to localStorage whenever completedPhases changes (additional safety)
   useEffect(() => {
-    localStorage.setItem('java-roadmap-progress', JSON.stringify(completedPhases));
-  }, [completedPhases]);
+    if (!isLoading) {
+      localStorage.setItem('java-roadmap-progress', JSON.stringify(completedPhases));
+      console.log('Progress auto-saved to localStorage:', completedPhases);
+    }
+  }, [completedPhases, isLoading]);
 
   const handleExpandToggle = (phaseIndex) => {
     setExpandedPhases(prev => 
@@ -634,6 +704,19 @@ const JavaProgrammingRoadmap = () => {
 
   const completedCount = completedPhases.length;
   const totalPhases = JAVA_LANGUAGE_ROADMAP.phases.length;
+  const isAllCompleted = completedCount === totalPhases;
+
+  // Show loading state while progress is being loaded
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'dark-gradient-secondary' : 'bg-gray-50'}`}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
+          <p className={`mt-4 ${isDark ? 'text-white' : 'text-gray-700'}`}>Loading your progress...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen ${isDark ? 'dark-gradient-secondary' : 'bg-gray-50'}`}>
@@ -719,7 +802,13 @@ const JavaProgrammingRoadmap = () => {
             <h2 className={`text-xl md:text-2xl lg:text-3xl font-bold mb-6 md:mb-8 ${isDark ? 'text-white' : 'text-gray-900'}`}>
               Learning Path - 10 Weeks Journey
             </h2>
-            <div className="space-y-6 md:space-y-8">
+            
+            {/* Main container with continuous connecting line */}
+            <PhaseContainer 
+              isDark={isDark}
+              completedCount={completedCount}
+              totalPhases={totalPhases}
+            >
               {JAVA_LANGUAGE_ROADMAP.phases.map((phase, index) => (
                 <div key={index}>
                   <PhaseHeader
@@ -731,7 +820,7 @@ const JavaProgrammingRoadmap = () => {
                     isDark={isDark}
                     index={index}
                     isLast={index === JAVA_LANGUAGE_ROADMAP.phases.length - 1}
-                    showProgressAnimation={showProgressAnimation && index === completedCount}
+                    isAnimating={animatingPhases.includes(index)}
                   />
                   <PhaseContent
                     phase={phase}
@@ -745,7 +834,13 @@ const JavaProgrammingRoadmap = () => {
                   />
                 </div>
               ))}
-            </div>
+            </PhaseContainer>
+
+            {/* Completion Celebration */}
+            <CompletionCelebration 
+              isDark={isDark}
+              isVisible={isAllCompleted}
+            />
           </div>
         </div>
 
@@ -760,15 +855,16 @@ const JavaProgrammingRoadmap = () => {
           50% { transform: translateY(-20px) scale(1.1); opacity: 0.8; }
           100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
         }
-        @keyframes lineFill {
-          0% { height: 0%; }
-          100% { height: 100%; }
+        @keyframes lineFlow {
+          0% { height: 0%; opacity: 0.8; }
+          50% { height: 100%; opacity: 1; }
+          100% { height: 100%; opacity: 0; }
         }
         .animate-float {
           animation: float 1.5s ease-in-out forwards;
         }
-        .animate-lineFill {
-          animation: lineFill 2s ease-in-out forwards;
+        .animate-lineFlow {
+          animation: lineFlow 2s ease-out forwards;
         }
       `}</style>
     </div>

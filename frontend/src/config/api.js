@@ -88,6 +88,16 @@ export const API_ENDPOINTS = {
     RATING_ELIGIBILITY: `/api/stats/rating-eligibility`,
   },
 
+  // 🔔 NEW: Notification endpoints
+  NOTIFICATIONS: {
+    BASE: `/api/notifications`,
+    UNREAD_COUNT: `/api/notifications/unread-count`,
+    MARK_ALL_READ: `/api/notifications/mark-all-read`,
+    MARK_AS_READ: (id) => `/api/notifications/${id}/read`,
+    CLEAR_ALL: `/api/notifications/clear-all`,
+    PREFERENCES: `/api/notifications/preferences`,
+  },
+
   PREDICTION: {
     PREDICT: `/predict`,
   },
@@ -124,6 +134,18 @@ export const problemsAPI = {
 
 export const leaderboardAPI = {
   get: () => api.get(API_ENDPOINTS.LEADERBOARD.GET),
+};
+
+// 🔔 NEW: Notifications API
+export const notificationsAPI = {
+  getAll: (params = {}) => api.get(API_ENDPOINTS.NOTIFICATIONS.BASE, { params }),
+  getUnreadCount: () => api.get(API_ENDPOINTS.NOTIFICATIONS.UNREAD_COUNT),
+  markAsRead: (id) => api.patch(API_ENDPOINTS.NOTIFICATIONS.MARK_AS_READ(id)),
+  markAllAsRead: () => api.patch(API_ENDPOINTS.NOTIFICATIONS.MARK_ALL_READ),
+  delete: (id) => api.delete(API_ENDPOINTS.NOTIFICATIONS.BASE + `/${id}`),
+  clearAll: () => api.delete(API_ENDPOINTS.NOTIFICATIONS.CLEAR_ALL),
+  getPreferences: () => api.get(API_ENDPOINTS.NOTIFICATIONS.PREFERENCES),
+  updatePreferences: (preferences) => api.put(API_ENDPOINTS.NOTIFICATIONS.PREFERENCES, preferences),
 };
 
 export const predictionAPI = {

@@ -433,28 +433,31 @@ const PhaseContent = ({ phase, isCompleted, onToggle, isDark, index, isExpanded,
   );
 };
 
-// Main container with continuous connecting line
+// Main container with continuous connecting line - FIXED VERSION
 const PhaseContainer = ({ children, isDark, completedCount, totalPhases }) => {
   const progressPercent = (completedCount / totalPhases) * 100;
   
+  // Calculate the height of the progress line - stop at the last phase
+  const progressLineHeight = Math.min(progressPercent, ((totalPhases - 1) / totalPhases) * 100);
+  
   return (
     <div className="relative">
-      {/* Continuous vertical connecting line that spans all phases */}
-      <div className="absolute left-6 md:left-8 top-0 bottom-0 w-1 z-0">
+      {/* Continuous vertical connecting line that spans only up to the last phase */}
+      <div className="absolute left-6 md:left-8 top-0 w-1 z-0" style={{ height: 'calc(100% - 4rem)' }}>
         {/* Base line */}
         <div className={`w-full h-full ${isDark ? 'bg-gray-600' : 'bg-gray-300'} rounded-full`}></div>
         
-        {/* Progress line - animated height change */}
+        {/* Progress line - animated height change, stops before the last phase */}
         <div 
           className="absolute top-0 left-0 w-full bg-green-500 rounded-full transition-all duration-1500 ease-out"
-          style={{ height: `${progressPercent}%` }}
+          style={{ height: `${progressLineHeight}%` }}
         ></div>
         
         {/* Pulsing effect at the progress tip */}
         {completedCount > 0 && completedCount < totalPhases && (
           <div 
             className="absolute w-3 h-3 bg-green-500 rounded-full -left-1 transform -translate-y-1/2 animate-pulse"
-            style={{ top: `${progressPercent}%` }}
+            style={{ top: `${progressLineHeight}%` }}
           ></div>
         )}
       </div>
@@ -546,28 +549,37 @@ const CProgrammingRoadmap = () => {
   const [showFloatingAnimation, setShowFloatingAnimation] = useState(false);
   const [animationPhase, setAnimationPhase] = useState({ from: null, to: null });
   const [animatingPhases, setAnimatingPhases] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Load progress from localStorage
-    const savedProgress = localStorage.getItem('c-roadmap-progress');
-    if (savedProgress) {
+    const loadProgress = () => {
       try {
-        const parsedProgress = JSON.parse(savedProgress);
-        if (Array.isArray(parsedProgress)) {
-          setCompletedPhases(parsedProgress);
+        const savedProgress = localStorage.getItem('c-roadmap-progress');
+        console.log('Loading progress from localStorage:', savedProgress);
+        
+        if (savedProgress) {
+          const parsedProgress = JSON.parse(savedProgress);
+          if (Array.isArray(parsedProgress)) {
+            setCompletedPhases(parsedProgress);
+            console.log('Progress loaded successfully:', parsedProgress);
+          } else {
+            console.log('Invalid progress format, setting empty array');
+            setCompletedPhases([]);
+          }
         } else {
+          console.log('No saved progress found, setting empty array');
           setCompletedPhases([]);
-          localStorage.setItem('c-roadmap-progress', JSON.stringify([]));
         }
       } catch (error) {
         console.error('Error parsing saved progress:', error);
         setCompletedPhases([]);
-        localStorage.setItem('c-roadmap-progress', JSON.stringify([]));
+      } finally {
+        setIsLoading(false);
       }
-    } else {
-      setCompletedPhases([]);
-      localStorage.setItem('c-roadmap-progress', JSON.stringify([]));
-    }
+    };
+
+    loadProgress();
   }, []);
 
   const handleMarkComplete = (phaseIndex) => {
@@ -590,6 +602,10 @@ const CProgrammingRoadmap = () => {
       newCompletedPhases.push(phaseIndex);
       setCompletedPhases(newCompletedPhases);
 
+      // Save to localStorage immediately
+      localStorage.setItem('c-roadmap-progress', JSON.stringify(newCompletedPhases));
+      console.log('Progress saved to localStorage:', newCompletedPhases);
+
       // Hide floating animation after delay
       setTimeout(() => {
         setShowFloatingAnimation(false);
@@ -602,10 +618,13 @@ const CProgrammingRoadmap = () => {
     }
   };
 
-  // Save to localStorage whenever completedPhases changes
+  // Save to localStorage whenever completedPhases changes (additional safety)
   useEffect(() => {
-    localStorage.setItem('c-roadmap-progress', JSON.stringify(completedPhases));
-  }, [completedPhases]);
+    if (!isLoading) {
+      localStorage.setItem('c-roadmap-progress', JSON.stringify(completedPhases));
+      console.log('Progress auto-saved to localStorage:', completedPhases);
+    }
+  }, [completedPhases, isLoading]);
 
   const handleExpandToggle = (phaseIndex) => {
     setExpandedPhases(prev => 
@@ -630,6 +649,18 @@ const CProgrammingRoadmap = () => {
   const completedCount = completedPhases.length;
   const totalPhases = C_LANGUAGE_ROADMAP.phases.length;
   const isAllCompleted = completedCount === totalPhases;
+
+  // Show loading state while progress is being loaded
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'dark-gradient-secondary' : 'bg-gray-50'}`}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
+          <p className={`mt-4 ${isDark ? 'text-white' : 'text-gray-700'}`}>Loading your progress...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen ${isDark ? 'dark-gradient-secondary' : 'bg-gray-50'}`}>

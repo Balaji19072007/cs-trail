@@ -27,7 +27,8 @@ const googleAuthRoutes = require('./routes/googleAuthRoutes');
 const problemRoutes = require('./routes/problemRoutes');
 const leaderboardRoutes = require('./routes/leaderboardRoutes');
 const predictionRoutes = require('./routes/predictionRoutes');
-const statsRoutes = require('./routes/statsRoutes'); // Keep this import
+const statsRoutes = require('./routes/statsRoutes'); 
+const notificationRoutes = require('./routes/notificationRoutes');
 
 // Enable CORS for all routes
 app.use(cors({
@@ -70,6 +71,7 @@ const authLimiter = rateLimit({
 
 app.use('/api/auth/signin', authLimiter);
 app.use('/api/auth/signup', authLimiter);
+app.use('/api/notifications', notificationRoutes);
 
 // --- CLOUDINARY & MULTER SETUP ---
 

@@ -1,14 +1,13 @@
 // frontend/src/components/common/Navbar.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from "../../hooks/useAuth.jsx"; 
 import { useTheme } from '../../contexts/ThemeContext.jsx';
+import { useNotifications } from '../../hooks/useNotifications.js';
 import * as feather from 'feather-icons';
 import SearchBar from './SearchBar.jsx'; 
 
-
 // Data that describes all navigation links
-// PRIMARY items for the new bottom nav (high-traffic pages)
 const PRIMARY_NAV_ITEMS = [
     { name: 'Home', path: '/', icon: 'home' },
     { name: 'Courses', path: '/courses', icon: 'book' },
@@ -16,22 +15,31 @@ const PRIMARY_NAV_ITEMS = [
     { name: 'Problems', path: '/problems', icon: 'target' },
 ];
 
-// SECONDARY items for desktop nav and mobile side-drawer
 const SECONDARY_NAV_ITEMS = [
     { name: 'Leaderboard', path: '/leaderboard', icon: 'award' },
     { name: 'Community', path: '/community', icon: 'users' }
 ];
 
-// Combined list for desktop nav
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
-
 
 const Navbar = () => {
     const { isLoggedIn, user, logout, loading } = useAuth();
-    const { theme, toggleTheme, isDark } = useTheme(); // Use theme from context
+    const { theme, toggleTheme, isDark } = useTheme();
+    const { 
+        notifications, 
+        unreadCount, 
+        loading: notificationsLoading, 
+        markAsRead, 
+        markAllAsRead, 
+        clearAllNotifications,
+        deleteNotification,
+        refreshNotifications
+    } = useNotifications();
     const location = useLocation();
+    const navigate = useNavigate();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     
     const featherIconsInitialized = useRef(false);
 
@@ -54,34 +62,32 @@ const Navbar = () => {
         initializeFeatherIcons();
     });
 
-    // ⭐ NEW useEffect to handle content spacing for fixed navbars
+    // Handle content spacing for fixed navbars
     useEffect(() => {
         if (isLoggedIn) {
-            // Applies pt-16 (top navbar) and pb-16 (bottom navbar) only on mobile (max-width: 640px)
-            // On desktop (sm:), it will only need pt-16 for the top navbar.
             document.body.classList.add('mobile-nav-spacing');
         } else {
-            // When logged out, there is no bottom nav on mobile, so we just need pt-16
             document.body.classList.remove('mobile-nav-spacing');
             document.body.classList.add('logged-out-top-spacing'); 
         }
 
-        // Cleanup function
         return () => {
             document.body.classList.remove('mobile-nav-spacing', 'logged-out-top-spacing');
         };
     }, [isLoggedIn]);
-    // ⭐ END NEW useEffect
 
     useEffect(() => {
         const handleOutsideClick = (event) => {
             if (isDropdownOpen && !event.target.closest('#logged-in-profile')) {
                 setIsDropdownOpen(false);
             }
+            if (isNotificationsOpen && !event.target.closest('#notifications-container')) {
+                setIsNotificationsOpen(false);
+            }
         };
         document.addEventListener('click', handleOutsideClick);
         return () => document.removeEventListener('click', handleOutsideClick);
-    }, [isDropdownOpen]);
+    }, [isDropdownOpen, isNotificationsOpen]);
     
     useEffect(() => {
         setIsMobileMenuOpen(false);
@@ -90,6 +96,79 @@ const Navbar = () => {
     const toggleMobileMenu = () => {
         setIsMobileMenuOpen(prev => !prev);
     }
+
+    const toggleNotifications = async () => {
+        if (!isNotificationsOpen && unreadCount > 0) {
+            // Mark all as read when opening notifications
+            try {
+                await markAllAsRead();
+            } catch (error) {
+                console.error('Failed to mark notifications as read:', error);
+            }
+        }
+        setIsNotificationsOpen(prev => !prev);
+    }
+
+    const handleNotificationClick = async (notification) => {
+        try {
+            if (!notification.read) {
+                await markAsRead(notification._id);
+            }
+            setIsNotificationsOpen(false);
+            
+            // Navigate to notification link if available
+            if (notification.link) {
+                navigate(notification.link);
+            }
+        } catch (error) {
+            console.error('Failed to handle notification click:', error);
+        }
+    }
+
+    const handleClearAllNotifications = async () => {
+        try {
+            await clearAllNotifications();
+            setIsNotificationsOpen(false);
+        } catch (error) {
+            console.error('Failed to clear notifications:', error);
+        }
+    }
+
+    const handleMarkAllAsRead = async () => {
+        try {
+            await markAllAsRead();
+        } catch (error) {
+            console.error('Failed to mark all as read:', error);
+        }
+    }
+
+    const formatNotificationTime = (createdAt) => {
+        const now = new Date();
+        const created = new Date(createdAt);
+        const diffInSeconds = Math.floor((now - created) / 1000);
+        const diffInMinutes = Math.floor(diffInSeconds / 60);
+        const diffInHours = Math.floor(diffInMinutes / 60);
+        const diffInDays = Math.floor(diffInHours / 24);
+
+        if (diffInSeconds < 60) return 'Just now';
+        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+        if (diffInHours < 24) return `${diffInHours}h ago`;
+        if (diffInDays < 7) return `${diffInDays}d ago`;
+        
+        return created.toLocaleDateString();
+    };
+
+    const getNotificationIcon = (type) => {
+        const icons = {
+            course: 'book',
+            achievement: 'award',
+            challenge: 'target',
+            system: 'info',
+            progress: 'trending-up',
+            community: 'users'
+        };
+        return icons[type] || 'bell';
+    };
 
     const renderNavLinks = (isMobile = false, items = NAV_ITEMS) => {
         if (!isLoggedIn) return null;
@@ -105,23 +184,19 @@ const Navbar = () => {
             }
             
             const baseClasses = "font-medium transition-all duration-300";
-            // Desktop Classes (only used for NAV_ITEMS combined array)
             const desktopClasses = `h-full flex items-center px-4 pt-1 text-sm ${isActive ? 'active-nav' : 'text-gray-300 hover:text-white'}`;
             
-            // Theme-aware mobile classes (used for SECONDARY_NAV_ITEMS in the side-drawer)
             const mobileClasses = `flex items-center px-4 py-3 text-base font-medium rounded-lg mx-2 transition-all duration-200 border-l-4 ${
                 isActive 
                     ? 'bg-primary-500/20 text-primary-600 border-primary-500' 
                     : `border-transparent ${isDark ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
             }`;
             
-            // Mobile Bottom Nav Classes (used for PRIMARY_NAV_ITEMS in bottom nav)
             const bottomNavClasses = `flex flex-col items-center justify-center p-2 pt-2.5 transition-colors duration-200 ${
                 isActive
-                    ? 'text-primary-500' // Active color for bottom nav
+                    ? 'text-primary-500'
                     : (isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900')
             }`;
-
 
             return (
                 <Link 
@@ -135,7 +210,6 @@ const Navbar = () => {
                     {(isMobile && items !== PRIMARY_NAV_ITEMS) && (
                         <i data-feather={item.icon} className="w-5 h-5 mr-3"></i>
                     )}
-                    {/* Only use icon and small text for the bottom nav */}
                     {(isMobile && items === PRIMARY_NAV_ITEMS) ? (
                         <>
                             <i data-feather={item.icon} className="w-5 h-5 mb-1"></i>
@@ -170,6 +244,182 @@ const Navbar = () => {
         setIsDropdownOpen(false);
     }
 
+    const renderNotifications = () => {
+        return (
+            <div id="notifications-container" className="relative">
+                {/* Notification Bell Button */}
+                <button 
+                    onClick={toggleNotifications}
+                    className={`relative p-2 rounded-lg transition-all duration-300 ${
+                        isDark 
+                            ? 'text-gray-400 hover:text-white hover:bg-gray-700' 
+                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                    }`}
+                    title="Notifications"
+                    disabled={notificationsLoading}
+                >
+                    <i data-feather="bell" className="w-5 h-5"></i>
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 text-xs font-bold rounded-full bg-red-500 text-white animate-pulse">
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
+                    {notificationsLoading && (
+                        <span className="absolute -top-1 -right-1 flex items-center justify-center h-5 w-5 text-xs font-bold rounded-full bg-gray-500 text-white">
+                            ...
+                        </span>
+                    )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                {isNotificationsOpen && (
+                    <div className={`absolute right-0 top-12 mt-2 w-80 sm:w-96 rounded-lg shadow-xl z-50 ${
+                        isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
+                    }`}>
+                        {/* Header */}
+                        <div className={`flex items-center justify-between p-4 border-b ${
+                            isDark ? 'border-gray-700' : 'border-gray-200'
+                        }`}>
+                            <h3 className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                Notifications
+                                {unreadCount > 0 && (
+                                    <span className="ml-2 text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+                                        {unreadCount} new
+                                    </span>
+                                )}
+                            </h3>
+                            <div className="flex items-center space-x-2">
+                                {notifications.length > 0 && unreadCount > 0 && (
+                                    <button 
+                                        onClick={handleMarkAllAsRead}
+                                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                                            isDark 
+                                                ? 'text-blue-400 hover:text-blue-300 hover:bg-blue-500/20' 
+                                                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                                        }`}
+                                    >
+                                        Mark all read
+                                    </button>
+                                )}
+                                {notifications.length > 0 && (
+                                    <button 
+                                        onClick={handleClearAllNotifications}
+                                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                                            isDark 
+                                                ? 'text-gray-400 hover:text-red-400 hover:bg-red-500/20' 
+                                                : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                                        }`}
+                                    >
+                                        Clear all
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Notifications List */}
+                        <div className="max-h-96 overflow-y-auto">
+                            {notifications.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                                    <i data-feather="bell-off" className={`w-12 h-12 mb-3 ${
+                                        isDark ? 'text-gray-600' : 'text-gray-400'
+                                    }`}></i>
+                                    <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                                        No notifications yet
+                                    </p>
+                                    <p className={`text-sm mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        We'll notify you when something important happens
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    {notifications.map((notification) => (
+                                        <div 
+                                            key={notification._id}
+                                            className={`p-4 transition-colors cursor-pointer group ${
+                                                !notification.read 
+                                                    ? (isDark ? 'bg-blue-500/10 border-l-4 border-blue-500' : 'bg-blue-50 border-l-4 border-blue-500')
+                                                    : (isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50')
+                                            }`}
+                                            onClick={() => handleNotificationClick(notification)}
+                                        >
+                                            <div className="flex items-start space-x-3">
+                                                <div className={`flex-shrink-0 mt-1 ${
+                                                    !notification.read 
+                                                        ? (isDark ? 'text-blue-400' : 'text-blue-500')
+                                                        : (isDark ? 'text-gray-500' : 'text-gray-400')
+                                                }`}>
+                                                    <i data-feather={getNotificationIcon(notification.type)} className="w-4 h-4"></i>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm font-medium ${
+                                                        isDark ? 'text-white' : 'text-gray-900'
+                                                    }`}>
+                                                        {notification.title}
+                                                    </p>
+                                                    <p className={`text-sm mt-1 ${
+                                                        isDark ? 'text-gray-300' : 'text-gray-600'
+                                                    }`}>
+                                                        {notification.message}
+                                                    </p>
+                                                    <div className="flex items-center justify-between mt-2">
+                                                        <p className={`text-xs ${
+                                                            isDark ? 'text-gray-500' : 'text-gray-400'
+                                                        }`}>
+                                                            {formatNotificationTime(notification.createdAt)}
+                                                        </p>
+                                                        {notification.important && (
+                                                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                isDark ? 'bg-yellow-500/20 text-yellow-400' : 'bg-yellow-100 text-yellow-700'
+                                                            }`}>
+                                                                Important
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        deleteNotification(notification._id);
+                                                    }}
+                                                    className={`opacity-0 group-hover:opacity-100 p-1 rounded transition-all ${
+                                                        isDark 
+                                                            ? 'text-gray-400 hover:text-red-400 hover:bg-red-500/20' 
+                                                            : 'text-gray-300 hover:text-red-600 hover:bg-red-50'
+                                                    }`}
+                                                >
+                                                    <i data-feather="x" className="w-3 h-3"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        {notifications.length > 0 && (
+                            <div className={`p-3 border-t ${
+                                isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-gray-50'
+                            }`}>
+                                <Link 
+                                    to="/notifications"
+                                    className={`block text-center text-sm font-medium transition-colors ${
+                                        isDark 
+                                            ? 'text-primary-400 hover:text-primary-300' 
+                                            : 'text-primary-600 hover:text-primary-700'
+                                    }`}
+                                    onClick={() => setIsNotificationsOpen(false)}
+                                >
+                                    View All Notifications
+                                </Link>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // Theme-aware background and text classes
     const mobileBgClass = isDark ? 'bg-gray-900' : 'bg-white';
     const mobileBorderClass = isDark ? 'border-gray-700' : 'border-gray-200';
@@ -179,7 +429,6 @@ const Navbar = () => {
     const mobileCardBgClass = isDark ? 'bg-gray-800/50' : 'bg-gray-50';
     
     if (loading) {
-        // Reduced opacity to 0 to make it invisible while loading
         return <nav className="dark-gradient shadow-lg fixed top-0 left-0 w-full z-50 h-16 border-b border-gray-700 opacity-0"></nav>;
     }
 
@@ -213,7 +462,7 @@ const Navbar = () => {
                         )}
                     </div>
 
-                    {/* 2. RIGHT SIDE: SEARCH, THEME, & AUTH/PROFILE */}
+                    {/* 2. RIGHT SIDE: SEARCH, THEME, NOTIFICATIONS & AUTH/PROFILE */}
                     <div className="flex items-center space-x-3 h-full">
                         
                         {/* Desktop Search Bar */}
@@ -235,6 +484,13 @@ const Navbar = () => {
                         >
                             <i data-feather={themeIcon} className="w-5 h-5"></i>
                         </button>
+
+                        {/* Notifications */}
+                        {isLoggedIn && (
+                            <div className="hidden sm:block">
+                                {renderNotifications()}
+                            </div>
+                        )}
 
                         {/* Auth Section */}
                         <div id="auth-nav-container" className="flex items-center space-x-3">
@@ -262,7 +518,6 @@ const Navbar = () => {
                                                     <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
                                                 </div>
                                                 <div className="py-1">
-                                                    {/* UPDATED: Link to My Courses page */}
                                                     <Link 
                                                         to="/my-courses" 
                                                         className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
@@ -272,7 +527,6 @@ const Navbar = () => {
                                                     >
                                                         <i data-feather="book-open" className="w-4 h-4 mr-2"></i> My Courses
                                                     </Link>
-                                                    {/* UPDATED: Link to My Progress page */}
                                                     <Link 
                                                         to="/my-progress" 
                                                         className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
@@ -281,6 +535,20 @@ const Navbar = () => {
                                                         onClick={() => setIsDropdownOpen(false)}
                                                     >
                                                         <i data-feather="bar-chart-2" className="w-4 h-4 mr-2"></i> My Progress
+                                                    </Link>
+                                                    <Link 
+                                                        to="/notifications"
+                                                        className={`flex px-4 py-2 text-sm items-center transition-colors duration-200 ${
+                                                            isDark ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                                                        }`}
+                                                        onClick={() => setIsDropdownOpen(false)}
+                                                    >
+                                                        <i data-feather="bell" className="w-4 h-4 mr-2"></i> Notifications
+                                                        {unreadCount > 0 && (
+                                                            <span className="ml-auto bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                                                {unreadCount}
+                                                            </span>
+                                                        )}
                                                     </Link>
                                                     <Link 
                                                         to="/settings" 
@@ -366,7 +634,7 @@ const Navbar = () => {
                                 </div>
 
                                 {/* Scrollable Content */}
-                                <div className="flex-1 overflow-y-auto pb-4"> {/* Added pb-4 for space above the footer */}
+                                <div className="flex-1 overflow-y-auto pb-4">
                                     {/* User Profile Section */}
                                     {isLoggedIn && user && (
                                         <div className={`p-4 border-b ${mobileBorderClass} ${isDark ? 'bg-gray-800/30' : 'bg-gray-50'}`}>
@@ -378,15 +646,28 @@ const Navbar = () => {
                                                     <p className={`text-base font-semibold truncate ${mobileTextClass}`}>{user.name}</p>
                                                     <p className={`text-sm truncate ${mobileSecondaryTextClass}`}>{user.email}</p>
                                                 </div>
+                                                {/* Mobile Notification Bell */}
+                                                {isLoggedIn && (
+                                                    <button 
+                                                        onClick={toggleNotifications}
+                                                        className="relative p-2"
+                                                    >
+                                                        <i data-feather="bell" className={`w-5 h-5 ${mobileSecondaryTextClass}`}></i>
+                                                        {unreadCount > 0 && (
+                                                            <span className="absolute -top-1 -right-1 flex items-center justify-center h-4 w-4 text-xs font-bold rounded-full bg-red-500 text-white">
+                                                                {unreadCount > 9 ? '9+' : unreadCount}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Quick Actions - Updated links to point to correct pages */}
+                                    {/* Quick Actions */}
                                     {isLoggedIn && (
                                         <div className={`p-4 border-b ${mobileBorderClass}`}>
                                             <div className="grid grid-cols-2 gap-2">
-                                                {/* UPDATED: Link to My Progress page */}
                                                 <Link 
                                                     to="/my-progress" 
                                                     className={`flex flex-col items-center p-3 rounded-lg transition-colors duration-200 group ${mobileCardBgClass} ${mobileHoverBgClass}`}
@@ -397,7 +678,6 @@ const Navbar = () => {
                                                         isDark ? 'text-gray-300 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
                                                     }`}>My Progress</span>
                                                 </Link>
-                                                {/* UPDATED: Link to My Courses page */}
                                                 <Link 
                                                     to="/my-courses" 
                                                     className={`flex flex-col items-center p-3 rounded-lg transition-colors duration-200 group ${mobileCardBgClass} ${mobileHoverBgClass}`}
@@ -419,7 +699,7 @@ const Navbar = () => {
                                         </div>
                                     )}
 
-                                    {/* SECONDARY Navigation Links (Leaderboard & Community) */}
+                                    {/* SECONDARY Navigation Links */}
                                     {isLoggedIn && SECONDARY_NAV_ITEMS.length > 0 && (
                                         <div className="p-2 border-b">
                                             <p className={`px-4 py-2 text-xs uppercase font-semibold ${mobileSecondaryTextClass}`}>More</p>
